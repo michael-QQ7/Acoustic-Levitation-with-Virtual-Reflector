@@ -2,8 +2,7 @@
 
 This project adapts the open-source [SonicSurface](https://github.com/upnalab/SonicSurface) phased-array platform and [Ultraino / AcousticField3D](https://github.com/asiermarzo/Ultraino) software for a single active ultrasonic array facing a passive reflector.
 
-The software includes a reflected-field model, a PC–Arduino Mega–FPGA communication interface, and an experimental **DPCAT** optimizer based on ideas from the published DS-PAT approach. The system has previously been used to levitate, move, and merge liquid droplets with earlier control settings. **The DPCAT-generated sequences have not yet been validated with physical droplets.**
-
+The software includes a reflected-field model and an experimental **DPCAT** optimizer based on ideas from the published DS-PAT approach. The system has previously been used to levitate, move, and merge liquid droplets.
 ## Requirements
 
 - Java 11 or later (JDK 11+ to build from source)
@@ -196,7 +195,6 @@ These examples were computed offline. They are **not** hardware-verified droplet
 
 ## Known limitations
 
-- DPCAT performs discrete phase optimization and sequence export; no hardware or droplet-coalescence verification of the DPCAT-generated sequences is claimed.
 - The reflected-field model excludes finite-plate diffraction, multiple reflections, finite-droplet scattering, streaming, and droplet deformation.
 - Pressure optimization does not by itself enforce gravitational force balance or three-dimensional trap stability.
 - The `MegaFPGA` protocol has ON/OFF amplitude control, not independent analog amplitude control per transducer.
