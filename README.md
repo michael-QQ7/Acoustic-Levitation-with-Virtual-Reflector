@@ -2,7 +2,7 @@
 
 This project adapts the open-source [SonicSurface](https://github.com/upnalab/SonicSurface) phased-array platform and [Ultraino / AcousticField3D](https://github.com/asiermarzo/Ultraino) software for a single active ultrasonic array facing a passive reflector.
 
-The software includes a reflected-field model, a PC–Arduino Mega–FPGA communication interface, and an experimental **DPCAT** optimizer based on ideas from the published DS-PAT approach. The system has previously been used to levitate, move, and merge liquid droplets with earlier control settings. 
+The software includes a reflected-field model, a PC–Arduino Mega–FPGA communication interface, and an experimental **DPCAT** optimizer based on ideas from the published DS-PAT approach. The system has previously been used to levitate, move, and merge liquid droplets with earlier control settings. **The DPCAT-generated sequences have not yet been validated with physical droplets.**
 
 ## Requirements
 
@@ -39,40 +39,107 @@ The project can also be opened in NetBeans by selecting the directory containing
 
 The reflector uses a single image-source reflection from an idealized infinite plane. Changing the plate position updates the field model but does not automatically re-optimize the transducer phases. The displayed plate dimensions do not set its acoustic extent.
 
-## 3. Select the serial protocol
+## 3. Connect a controller (Devs → TransControl → Protocol)
 
-Open the **Devs / TransControl** panel and choose the protocol that matches your controller. The baud rates below come from the corresponding Java protocol classes in this version.
+Open **Devs → TransControl**, select the protocol for the hardware and firmware actually connected, then click **Connect** and select its serial port. The **Protocol** menu selects a Java communication implementation; it does not automatically detect or reprogram the controller. The baud rate is set when the PC opens the serial port, so disconnect and reconnect after changing protocols or the Java baud-rate constant.
 
-| Protocol | Baud rate (bps) | Source |
-| --- | ---: | --- |
-| `MEGA` | 115200 | `ArduinoMEGA64.java` |
-| `SimpleFPGA` | 230400 | `SimpleFPGA.java` |
-| `Nano8` | 115200 | `ArduinoNano.java` |
-| `MEGA_Anim` | 115200 | `ArduinoMEGA64_Anim.java` |
-| `Nano16` | 115200 | `ArduinoNano16.java` |
-| `SimpleFPGA_128` | 1500000 | `SimpleFPGA_128.java` |
-| `Chained FPGA` | 230400 | `ChainedFPGA.java` (extends `SimpleFPGA`) |
-| **`MegaFPGA`** | **250000** | **`MegaFPGA.java`** |
+### Protocol comparison
 
-**For the PC → Arduino Mega → FPGA setup described here, select `MegaFPGA`, not `MEGA`.** `MEGA` refers to a separate 115200-bps driver protocol. The DPCAT hardware playback controls require the `MegaFPGA` connection.
+Values below were checked against `src/acousticfield3d/protocols/` and `TransControlPanel.java` in this release. **PC baud** refers to the connection opened by AcousticField3D, not to every UART within the hardware.
 
-With the supplied Mega interface, the firmware should use:
+| Protocol (GUI) | Connected hardware | PC baud (bps) | Phase divisions | Channels | Data sent from the PC | Use / notes |
+| --- | --- | ---: | ---: | --- | --- | --- |
+| `MEGA` | Arduino Mega driver boards | 115200 | 10 | 64 per board; multiple boards supported | Packed waveform bitplanes, split into tagged nibbles; duration/commit commands | Original Mega 64-channel-per-board protocol; board number is encoded in the data. |
+| `SimpleFPGA` | FPGA connected directly to PC serial | 230400 | 32 | 256 | Binary `254` + 256 phase bytes; optional `251` + 256 amplitude bytes; `253` to switch buffers | Direct FPGA phase control, optional amplitude/multiplex commands. |
+| `Nano8` | Arduino Nano driver | 115200 | 24 | 8 | Packed waveform bitplanes, split into nibble commands; `0` switches buffers | Original 8-channel Nano driver. |
+| `MEGA_Anim` | Arduino Mega with matching animation firmware | 115200 | 10 | 64 per board; multiple boards supported | Mega-style tagged waveform frames and separate duration commands | Original Mega animation variant; **not** DPCAT playback. |
+| `Nano16` | Arduino Nano with matching 16-channel firmware | 115200 | 16 | 16 | Same packed-nibble scheme as `Nano8`, for 16 channels and 16 time slots | Original 16-channel Nano driver. |
+| `SimpleFPGA 128` | FPGA with matching 128-step firmware | 1500000 | 128 | **72** in this Java implementation (`64 + 8`) | `SimpleFPGA` binary frame format, but 72 phase/amplitude entries | 128 **phase divisions**, not 128 output channels in the current code. |
+| `Chained FPGA` | Multiple chained FPGA boards | 230400 | 32 | 256 per board; board count derived from loaded transducer count | Each board: selection byte `192 + board index` followed by 256 phase bytes; buffer switch is separate | Check board ordering and channel numbers. No fixed number of boards is guaranteed. |
+| **`MegaFPGA`** | **PC → Arduino Mega → FPGA** | **250000** | **32** | **256 logical channels; 192 physically fitted in this setup** | **ASCII** `version\n` handshake; `phases=p0,...,p255\n` commands; waits for Mega reply | **Use this for the reflector-assisted lab system and DPCAT playback.** |
 
-```cpp
-Serial.begin(250000);   // PC USB -> Arduino Mega
-Serial2.begin(250000);  // Arduino Mega TX2 -> FPGA
+`MEGA`, `MEGA_Anim` and `MegaFPGA` are three **different protocols**. Matching their baud rates alone will not make their commands interchangeable. The mapping from a simulated transducer to a physical channel also differs by implementation: the original Mega protocols use driver-pin/board mappings, whereas `MegaFPGA` uses the transducer **Order number** (minus its device offset) as the raw FPGA channel address.
+
+For the included 40 kHz example, one acoustic cycle is **25 µs**. Phase divisions describe the *resolution within that cycle*, not the rate at which new frames are transmitted:
+
+| Phase divisions | Phase step | Equivalent time step at 40 kHz |
+| ---: | ---: | ---: |
+| 10 | 36° | 2.500 µs |
+| 16 | 22.5° | 1.563 µs |
+| 24 | 15° | 1.042 µs |
+| 32 | 11.25° | 0.781 µs |
+| 128 | 2.8125° | 0.195 µs |
+
+These time steps are ideal phase intervals, **not measured switching accuracy**.
+
+### MegaFPGA configuration (our setup)
+
+Use **`MegaFPGA`**, not `MEGA`, for the Arduino Mega 2560 forwarding commands to the SonicSurface-style FPGA. The Java encoder has **256 logical channels**: phase codes `0–31` represent 32 discrete phases; code **`32` means OFF**. The example apparatus has **192 installed transducers** (addresses `64–255`) and **64 unused addresses**. Check that your array model has the correct `Order number` and phase corrections; unused channels should remain disabled.
+
+```text
+AcousticField3D on PC
+    |
+    | USB–UART bridge; 250000 bps (Java PC_BAUD)
+    | ASCII: version\n, phases=p0,...,p255\n
+    v
+Arduino Mega 2560 — Serial / UART0
+    | parse command and forward a binary frame
+    | Serial2 / UART2; target 250000 bps (firmware setting)
+    v
+FPGA UART receiver — must match Serial2 speed
+    |
+    v
+256 logical outputs (192 populated in this apparatus)
 ```
 
-The `MegaFPGA` Java class sets the **PC-to-Mega** link to 250000 bps. The **Mega-to-FPGA** rate is set in the Arduino firmware and must match the FPGA receiver; changing the GUI protocol does not reprogram either device. Check the existing level shifting and common-ground wiring before connecting.
+The Arduino Mega 2560 uses a **USB–UART bridge** for this PC connection; it is not a baud-independent native USB CDC endpoint. Arduino `Serial` (UART0) and `Serial2` (UART2) have **separate settings**. For the documented 250000/250000 configuration, the compatible firmware needs:
 
-To send a pattern:
+```cpp
+Serial.begin(250000);    // PC ↔ Mega (USB–UART bridge, UART0)
+Serial2.begin(250000);   // Mega TX2 (pin 16) → FPGA UART
+```
 
-1. Select **MegaFPGA**, click **Connect**, and choose the correct COM port.
-2. Wait for **`Mega ready (250000 / 250000)`**.
-3. Set or optimize the active transducer phases and click **Send**, or use **Send Current Frame** in DPCAT.
-4. Check for **`Mega: phases ok`**. This confirms that the Arduino processed the command; it is **not** an FPGA acknowledgment or a measurement of the acoustic field.
+The Java file `MegaFPGA.java` defines `PC_BAUD = 250000` and opens **only the PC-to-Mega serial port** using that value. It also defines `FPGA_BAUD = 250000` and displays `Mega ready (250000 / 250000)`, but neither declaration configures the physical FPGA receiver or executes `Serial2.begin(...)` on the Arduino. **The supplied project does not include `MegaCommandSender.ino` or the running FPGA receiver configuration, so their current on-device baud rates have not been verified from source.** Check the uploaded Mega sketch and FPGA build before connecting. Also confirm the Mega-to-FPGA voltage-level conversion (typically 5 V to 3.3 V), common ground and TX2-to-FPGA-RX wiring. This link is documented as using `Serial2`, not `Serial1`; verifying any other firmware UART use also requires the actual sketch.
 
-The PC sends one ASCII line containing `phases=p0,p1,...,p255`. Each channel has a code from `0` to `31` (phase), or `32` (OFF). Missing and disabled channels are sent as OFF. The Arduino forwards the pattern to the FPGA using its existing firmware protocol. No new FPGA serial command format is introduced by DPCAT.
+For example, if you change the Java value to `PC_BAUD = 500000` and rebuild, while setting the corresponding Arduino firmware to:
+
+```cpp
+Serial.begin(500000);
+Serial2.begin(250000);
+```
+
+only **PC ↔ Mega** changes to 500000 bps. **Mega ↔ FPGA** stays at 250000 bps. Changing a Java Protocol or constant does not change either Arduino UART setting automatically, and the FPGA UART timing must match the `Serial2` speed.
+
+#### Commands, acknowledgment and playback
+
+The PC sends **text**, one line per command. Example (abbreviated; the real phase command has exactly 256 comma-separated values):
+
+```text
+version
+phases=0,16,32,...,31
+```
+
+The Java implementation waits for a numeric version reply, then sends phase frames and expects the exact Mega response **`phases ok`**. The accompanying `README_MegaFPGA.md` describes the Mega's downstream **binary** FPGA frame as `254, 192, <256 phase bytes>, 253` (start, board select, codes, buffer commit). **That downstream layout is documented but has not been checked against `MegaCommandSender.ino` in this release because the sketch is absent.** The FPGA does not receive the PC's ASCII `phases=` line.
+
+To send one frame:
+
+1. Load the `.xml.gz` array model and check active channels, order numbers, reflector position and calibration.
+2. Open **Devs → TransControl**, select **`MegaFPGA`**, click **Connect**, and choose the Mega's COM port.
+3. Wait for **`Mega ready (250000 / 250000)`**. This means the Java/Mega version handshake succeeded; it does **not** verify the downstream FPGA link.
+4. Click **Send** to transmit the current phases, or use **Send Current Frame** in DPCAT.
+5. Look for **`Mega: phases ok`**. This is the Mega's software acknowledgment, **not** an FPGA acknowledgment, verified electrical output, or evidence of a stable acoustic trap.
+
+For DPCAT sequences, use **Play Sequence To Mega / FPGA** in the DPCAT window. It sends one complete frame, waits for the Mega acknowledgment, and only then schedules the next frame. The TransControl **Switch**, **Seq**, **Mult**, **Durations** and push/pull controls are disabled for `MegaFPGA`; `MEGA_Anim` is a separate original protocol and must not be selected as a substitute.
+
+**Three separate quantities:**
+
+- **Baud rate:** the symbol rate of one serial link (250000 bps here for binary UART signalling). It is not the number of phase frames sent per second.
+- **Phase divisions:** 32 means 32 possible phase positions within a 40 kHz acoustic cycle, not 32 Hz.
+- **Phase update rate:** completed 256-channel patterns per second, limited by frame length, UART framing, parsing, the Mega's acknowledgment, scheduling and FPGA behavior. It must be measured across the complete link.
+
+At 250000 bps using standard **8N1** serial framing, even the *shortest possible* 256-value `phases=` line is **519 bytes**, requiring about **20.8 ms** just to transmit PC → Mega. Typical two-digit codes require more bytes. Thus the current full ASCII-frame format cannot deliver **500 complete patterns/s** at 250000 bps; a 2 ms dwell setting or a 250000-bps baud rate does not establish a 500 Hz update rate. For actual playback timing use **Export Playback Timing CSV** and, when needed, measure the FPGA outputs directly.
+
+**Safe shutdown:** Disconnect and Stop do not guarantee that the last FPGA pattern switches off. Set all transducer amplitudes to `0`, click **Send**, wait for `phases ok`, then disconnect. Use an independent hardware power cutoff for emergencies.
 
 Further details: [MegaFPGA communication](AcousticFieldSim/README_MegaFPGA.md).
 
