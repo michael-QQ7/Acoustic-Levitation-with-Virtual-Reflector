@@ -71,7 +71,7 @@ For the included 40 kHz example, one acoustic cycle is **25 µs**. Phase divisio
 
 These time steps are ideal phase intervals, **not measured switching accuracy**.
 
-### MegaFPGA configuration (our setup)
+### Example：MegaFPGA
 
 Use **`MegaFPGA`**, not `MEGA`, for the Arduino Mega 2560 forwarding commands to the SonicSurface-style FPGA. The Java encoder has **256 logical channels**: phase codes `0–31` represent 32 discrete phases; code **`32` means OFF**. The example apparatus has **192 installed transducers** (addresses `64–255`) and **64 unused addresses**. Check that your array model has the correct `Order number` and phase corrections; unused channels should remain disabled.
 
