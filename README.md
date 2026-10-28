@@ -74,8 +74,6 @@ To send a pattern:
 
 The PC sends one ASCII line containing `phases=p0,p1,...,p255`. Each channel has a code from `0` to `31` (phase), or `32` (OFF). Missing and disabled channels are sent as OFF. The Arduino forwards the pattern to the FPGA using its existing firmware protocol. No new FPGA serial command format is introduced by DPCAT.
 
-**Stopping playback or disconnecting does not switch off the last transmitted pattern.** To shut the array down through this interface, first set all amplitudes to `0`, click **Send**, wait for the acknowledgment, and then disconnect. Use a separate physical emergency shutdown arrangement for the experimental apparatus.
-
 Further details: [MegaFPGA communication](AcousticFieldSim/README_MegaFPGA.md).
 
 ## 4. Optimize a field or generate a sequence
