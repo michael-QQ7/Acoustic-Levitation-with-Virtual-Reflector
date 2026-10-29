@@ -1,0 +1,673 @@
+--- a/AcousticFieldSim/build_reflector.py
++++ b/AcousticFieldSim/build_reflector.py
+@@ -33,3 +33,7 @@
+   cmd=['java','-Djava.awt.headless=true','-cp',os.pathsep.join([str(tests),testcp]),'acousticfield3d.algorithms.'+name]
+   if name=='ReflectorIntegrationTest':cmd.append(str(root/'verification/reflector-panel.png'))
+   subprocess.run(cmd,check=True)
++ for name in ['acousticfield3d.protocols.MegaFPGATest', 'acousticfield3d.gui.panels.MegaFPGAPanelTest']:
++  cmd=['java','-Djava.awt.headless=true','-cp',os.pathsep.join([str(tests),testcp]),name]
++  if name.endswith('MegaFPGAPanelTest'):cmd.append(str(root/'verification/megafpga-panel.png'))
++  subprocess.run(cmd,check=True)
+--- /dev/null
++++ b/AcousticFieldSim/README_MegaFPGA.md
+@@ -0,0 +1,72 @@
++# MegaFPGA 通信
++
++此版本在 TransControl 面板新增并默认选择 **MegaFPGA**，用于现有
++`MegaCommandSender.ino` 文本命令固件。原有 MEGA、SimpleFPGA 等协议仍可选择。
++
++## 使用
++
++1. 启动 `START_Reflector.bat`，打开 TransControl 面板，选择 `MegaFPGA`。
++2. 点击 `Connect`，选择 Mega 的 COM 口。等待约 2 秒复位及版本应答，
++   面板显示 `Mega ready (250000 / 250000)`。
++3. 设置仿真换能器相位和振幅，点击 `Send`。成功时显示 `Mega: phases ok`。
++4. `Disconnect` 关闭 PC 串口；它不会发送全关命令，FPGA 保持最后的相位。
++   如需关闭输出，先将所有换能器振幅设为 0 并点击 `Send`，等候应答后再断开。
++
++Mega 固件应保持：
++
++```cpp
++Serial.begin(250000);   // PC USB -> Mega
++Serial2.begin(250000);  // Mega TX2/D16 -> FPGA，保持不变
++```
++
++如果板上的固件仍为 `Serial.begin(500000)`，需改为上述配置并重新上传 Mega 固件。
++
++Java 只设置 PC 串口为 **250000、8N1**。FPGA 波特率由 Mega 固件和 FPGA
++接收器共同决定，GUI 不会修改它们。本包没有烧录任何硬件。
++接线沿用 Mega TX2/D16 → FPGA RX，共地，保留现有 5V→3.3V 电平转换。
++
++## 协议与通道
++
++PC 发送 ASCII 文本，一行一个命令，以 LF (`\n`) 结束：
++
++```text
++version
++phases=p0,p1,...,p255
++```
++
++版本握手匹配现有固件的 `1.1` 等数字版本号。每条 phases 命令严格包含
++256 个值：`0..31` 为相位，`32` 为关闭。串口采用后台线程，界面可继续操作。
++每帧等待 `phases ok` 后才发下一帧；2 秒内未收到有效应答会关闭连接并显示错误，
++需重新 Connect。快速连续更新只保留最新一帧待发数据，防止积压；不保证播放每个动画帧。
++
++通道使用 **Order number（从 0 开始）减去该设备的起始偏移**，与原 SimpleFPGA
++的编号方式一致，默认偏移为 0。不是列表中的位置，也不会自动套用 SonicSurface
++逻辑编号到 FPGA 的置换表。模型编号必须对应实际 FPGA 原始通道地址。
++未出现在当前设备范围内的通道全部填 `32`；192 个换能器模型会把其余 64 个通道关闭。
++重复通道或非有限相位/振幅会显示错误。范围外换能器留给其他设备处理。
++
++相位沿用程序的 `getDiscPhase(32)`，包含软件 Phase correction。
++若 FPGA 已烧入同一份校准，模型中不要再次填入同一份修正。
++振幅只支持 ON/OFF：`<=0` 关闭，`>0` 开启，不发送 PWM 振幅数据。
++
++现有 Mega 收到 phases 后发往 FPGA：
++
++```text
++254, 192, 256 个相位字节, 253
++```
++
++Mega 已自动 commit，因此 Java 的 `switchBuffers()` 不再重复发 `switch`，
++以免切回旧缓冲。MegaFPGA 下禁用 Switch、Seq、Mult、Durations 和 push/pull。
++`phases ok` 是 **Mega 已处理命令的确认**，不是 FPGA 返回的接收确认。
++
++## 构建和验证
++
++需要 Python 3、JDK 11 或更新版本：
++
++```text
++python build_reflector.py --test
++```
++
++测试覆盖 256 通道编码、192 通道补关、相位量化与修正、设备偏移、分片应答、
++握手、等待应答后发送、快速更新、超时断开、取消复位，以及 GUI 控件状态。
++测试使用模拟串口，不会打开实体 COM 口。仍需在实际 Mega/FPGA 上验证最终输出。
+--- a/AcousticFieldSim/src/acousticfield3d/gui/panels/TransControlPanel.form
++++ b/AcousticFieldSim/src/acousticfield3d/gui/panels/TransControlPanel.form
+@@ -20,6 +20,8 @@
+               <EmptySpace max="-2" attributes="0"/>
+               <Group type="103" groupAlignment="0" attributes="0">
+                   <Component id="deviceCombo" max="32767" attributes="0"/>
++                  <Component id="linkInfoLabel" min="0" max="32767" attributes="0"/>
++                  <Component id="linkStatusLabel" min="0" max="32767" attributes="0"/>
+                   <Group type="102" alignment="0" attributes="0">
+                       <Component id="sendAnimButton" min="-2" max="-2" attributes="0"/>
+                       <EmptySpace max="32767" attributes="0"/>
+@@ -74,6 +76,10 @@
+               <EmptySpace max="-2" attributes="0"/>
+               <Component id="deviceCombo" min="-2" max="-2" attributes="0"/>
+               <EmptySpace max="-2" attributes="0"/>
++              <Component id="linkInfoLabel" min="-2" max="-2" attributes="0"/>
++              <EmptySpace max="-2" attributes="0"/>
++              <Component id="linkStatusLabel" min="-2" max="-2" attributes="0"/>
++              <EmptySpace max="-2" attributes="0"/>
+               <Group type="103" groupAlignment="3" attributes="0">
+                   <Component id="connectExtraButton" alignment="3" min="-2" max="-2" attributes="0"/>
+                   <Component id="extraNumberText" alignment="3" min="-2" max="-2" attributes="0"/>
+@@ -106,6 +112,10 @@
+     </DimensionLayout>
+   </Layout>
+   <SubComponents>
++    <Component class="javax.swing.JLabel" name="linkInfoLabel"/>
++    <Component class="javax.swing.JLabel" name="linkStatusLabel">
++      <Properties><Property name="text" type="java.lang.String" value="Disconnected"/></Properties>
++    </Component>
+     <Component class="javax.swing.JButton" name="sendButton">
+       <Properties>
+         <Property name="text" type="java.lang.String" value="Send"/>
+@@ -154,7 +164,7 @@
+     <Component class="javax.swing.JComboBox" name="deviceCombo">
+       <Properties>
+         <Property name="model" type="javax.swing.ComboBoxModel" editor="org.netbeans.modules.form.editors2.ComboBoxModelEditor">
+-          <StringArray count="7">
++          <StringArray count="8">
+             <StringItem index="0" value="MEGA"/>
+             <StringItem index="1" value="SimpleFPGA"/>
+             <StringItem index="2" value="Nano8"/>
+@@ -162,6 +172,7 @@
+             <StringItem index="4" value="Nano16"/>
+             <StringItem index="5" value="SimpleFPGA 128"/>
+             <StringItem index="6" value="Chained FPGA"/>
++            <StringItem index="7" value="MegaFPGA"/>
+           </StringArray>
+         </Property>
+         <Property name="toolTipText" type="java.lang.String" value="select the protocol"/>
+--- a/AcousticFieldSim/src/acousticfield3d/gui/panels/TransControlPanel.java
++++ b/AcousticFieldSim/src/acousticfield3d/gui/panels/TransControlPanel.java
+@@ -10,6 +10,7 @@
+ import acousticfield3d.protocols.ChainedFPGA;
+ import acousticfield3d.protocols.DeviceConnection;
+ import acousticfield3d.protocols.SimpleFPGA;
++import acousticfield3d.protocols.MegaFPGA;
+ import acousticfield3d.protocols.SimpleFPGA_128;
+ import acousticfield3d.scene.Entity;
+ import acousticfield3d.simulation.AnimKeyFrame;
+@@ -35,6 +36,9 @@
+     public TransControlPanel(MainForm mf) {
+         this.mf = mf;
+         initComponents();
++        deviceCombo.setSelectedIndex(7);
++        deviceCombo.addActionListener(event -> updateProtocolControls());
++        updateProtocolControls();
+     }
+ 
+     /**
+@@ -46,6 +50,8 @@
+     // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
+     private void initComponents() {
+ 
++        linkInfoLabel = new javax.swing.JLabel();
++        linkStatusLabel = new javax.swing.JLabel("Disconnected");
+         sendButton = new javax.swing.JButton();
+         initSerialButton = new javax.swing.JButton();
+         stopSerialButton = new javax.swing.JButton();
+@@ -101,7 +107,7 @@
+             }
+         });
+ 
+-        deviceCombo.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "MEGA", "SimpleFPGA", "Nano8", "MEGA_Anim", "Nano16", "SimpleFPGA 128", "Chained FPGA" }));
++        deviceCombo.setModel(new javax.swing.DefaultComboBoxModel(new String[] { "MEGA", "SimpleFPGA", "Nano8", "MEGA_Anim", "Nano16", "SimpleFPGA 128", "Chained FPGA", "MegaFPGA" }));
+         deviceCombo.setToolTipText("select the protocol");
+ 
+         jLabel1.setText("Phase");
+@@ -155,6 +161,8 @@
+                 .addContainerGap()
+                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                     .addComponent(deviceCombo, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
++                    .addComponent(linkInfoLabel, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
++                    .addComponent(linkStatusLabel, 0, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                     .addGroup(layout.createSequentialGroup()
+                         .addComponent(sendAnimButton)
+                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+@@ -196,6 +204,10 @@
+                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                 .addComponent(deviceCombo, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
+                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
++                .addComponent(linkInfoLabel)
++                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
++                .addComponent(linkStatusLabel)
++                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
+                     .addComponent(connectExtraButton)
+                     .addComponent(extraNumberText, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE))
+@@ -267,6 +279,7 @@
+ 
+     private void connectExtraButtonActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_connectExtraButtonActionPerformed
+         final DeviceConnection dc = getDeviceConnection(-1);
++        if (dc == null) return;
+         dc.setNumber( Parse.toInt( extraNumberText.getText() ));
+         extraDevices.add(dc);
+     }//GEN-LAST:event_connectExtraButtonActionPerformed
+@@ -279,6 +292,8 @@
+ 
+ 
+     private DeviceConnection getDeviceConnection(int port){
++        if (port == -1) port = SerialComms.listAndSelectPortIndex();
++        if (port == -1) return null;
+         final int index = deviceCombo.getSelectedIndex();
+         DeviceConnection dc;
+         
+@@ -296,6 +311,15 @@
+             dc = new SimpleFPGA_128();
+         }else if (index == 6){ //chained FPGA
+             dc = new ChainedFPGA();
++        }else if (index == 7){
++            final MegaFPGA mega = new MegaFPGA();
++            mega.setStatusListener(text -> javax.swing.SwingUtilities.invokeLater(() -> {
++                if (device == mega || extraDevices.contains(mega)) {
++                    linkStatusLabel.setText(text);
++                    linkStatusLabel.setToolTipText(text);
++                }
++            }));
++            dc = mega;
+         }else{
+             dc = new DeviceConnection();
+         }
+@@ -306,17 +330,27 @@
+     }
+     
+     public void initComm(int port){
+-        if (port == -1){
+-            stopComm();
+-            port = SerialComms.listAndSelectPortIndex();
+-            if (port != -1){
+-                device = getDeviceConnection(port);
+-            }
+-        }
+-    }
+-    
+-    
+-    
++        stopComm();
++        device = getDeviceConnection(port);
++        deviceCombo.setEnabled(device == null);
++        if (device != null && !(device instanceof MegaFPGA)) linkStatusLabel.setText("Serial opened");
++        updateProtocolControls();
++    }
++
++    private void updateProtocolControls() {
++        boolean mega = device instanceof MegaFPGA || (device == null && deviceCombo.getSelectedIndex() == 7);
++        linkInfoLabel.setText(mega ? "<html>PC → Mega: 250000 baud<br>Mega → FPGA: 250000 baud<br>256 channels / 32 phases<br>Amplitude: ON/OFF</html>" : "");
++        linkInfoLabel.setVisible(mega);
++        switchButton.setEnabled(!mega);
++        sendAnimButton.setEnabled(!mega);
++        multiplexButton.setEnabled(!mega);
++        durationsButton.setEnabled(!mega);
++        durationsText.setEnabled(!mega);
++        pushPullModeCheck.setEnabled(!mega);
++        if (mega) pushPullModeCheck.setSelected(false);
++        sendButton.setToolTipText(mega ? "Send phases and commit; wait for Mega phases ok (not an FPGA ACK)" : "Send phases and amplitudes");
++    }
++
+     public void stopComm(){
+         if (device != null){
+             device.disconnect();
+@@ -326,6 +360,9 @@
+             dc.disconnect();
+         }
+         extraDevices.clear();
++        deviceCombo.setEnabled(true);
++        linkStatusLabel.setText("Disconnected");
++        updateProtocolControls();
+     }
+     
+     
+@@ -427,6 +464,8 @@
+     private javax.swing.JTextField extraNumberText;
+     private javax.swing.JButton initSerialButton;
+     private javax.swing.JLabel jLabel1;
++    private javax.swing.JLabel linkInfoLabel;
++    private javax.swing.JLabel linkStatusLabel;
+     private javax.swing.JButton multiplexButton;
+     private javax.swing.JSpinner phaseSpinner;
+     private javax.swing.JCheckBox pushPullModeCheck;
+@@ -471,7 +510,7 @@
+ 
+     
+     private int getDivs() {
+-        return (device != null) ? device.getDivs() : DEFAULT_DIVS_PER_PERIOD;
++        return (device != null) ? device.getDivs() : (deviceCombo.getSelectedIndex() == 7 ? 32 : DEFAULT_DIVS_PER_PERIOD);
+     }
+ 
+     public void sendToogleCommand(){
+--- /dev/null
++++ b/AcousticFieldSim/src/acousticfield3d/protocols/MegaFPGA.java
+@@ -0,0 +1,188 @@
++package acousticfield3d.protocols;
++
++import acousticfield3d.simulation.Transducer;
++import acousticfield3d.utils.uartComm.SerialComms;
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.util.Arrays;
++import java.util.List;
++import java.util.concurrent.ArrayBlockingQueue;
++import java.util.concurrent.TimeUnit;
++import java.util.function.Consumer;
++
++/** MegaCommandSender text protocol. The Mega commits each phases command itself. */
++public class MegaFPGA extends DeviceConnection {
++    public static final int PC_BAUD = 250000;
++    public static final int FPGA_BAUD = 250000;
++    public static final int CHANNELS = 256;
++    public static final int PHASE_OFF = 32;
++
++    interface Transport {
++        void open(int port, SerialComms.Listener listener) throws IOException;
++        void write(byte[] data) throws IOException;
++        void close();
++    }
++
++    private static final class SerialTransport implements Transport {
++        private SerialComms connection;
++        public void open(int port, SerialComms.Listener listener) throws IOException {
++            connection = new SerialComms(port, PC_BAUD, listener);
++            if (!connection.isConnected()) throw new IOException("Cannot open Mega serial port");
++        }
++        public void write(byte[] data) throws IOException {
++            if (connection == null || !connection.isConnected()) throw new IOException("Serial disconnected");
++            connection.write(data);
++            connection.flush();
++            if (!connection.isConnected()) throw new IOException("Serial write failed");
++        }
++        public void close() {
++            if (connection != null && connection.isConnected()) connection.disconnect();
++            connection = null;
++        }
++    }
++
++    private final Transport transport;
++    private final long resetMillis;
++    private final long timeoutMillis;
++    // At most one unsent snapshot; rapid GUI updates replace the pending frame.
++    private final ArrayBlockingQueue<byte[]> pending = new ArrayBlockingQueue<>(1);
++    private final ArrayBlockingQueue<String> replies = new ArrayBlockingQueue<>(32);
++    private final StringBuilder line = new StringBuilder();
++    private volatile boolean active;
++    private volatile boolean ready;
++    private volatile String status = "Disconnected";
++    private Consumer<String> statusListener = value -> {};
++    private Thread worker;
++
++    public MegaFPGA() { this(new SerialTransport(), 2000, 2000); }
++
++    MegaFPGA(Transport transport, long resetMillis, long timeoutMillis) {
++        this.transport = transport;
++        this.resetMillis = resetMillis;
++        this.timeoutMillis = timeoutMillis;
++    }
++
++    @Override public int getSpeed() { return PC_BAUD; }
++    @Override public int getDivs() { return PHASE_OFF; }
++    public boolean isReady() { return ready; }
++    public String getStatus() { return status; }
++    public void setStatusListener(Consumer<String> listener) { statusListener = listener; }
++    private void status(String value) { status = value; statusListener.accept(value); }
++
++    @Override public void connect(int port) {
++        if (worker != null) throw new IllegalStateException("Use a new MegaFPGA connection to reconnect");
++        active = true;
++        status("Waiting for Mega reset...");
++        worker = new Thread(() -> runConnection(port), "MegaFPGA serial");
++        worker.setDaemon(true);
++        worker.start();
++    }
++
++    private void runConnection(int port) {
++        try {
++            transport.open(port, this);
++            Thread.sleep(resetMillis);
++            // A command/response handshake also supports boards with auto-reset disabled.
++            request("version\n".getBytes(StandardCharsets.US_ASCII), null);
++            ready = true;
++            status("Mega ready (250000 / 250000)");
++            while (active) {
++                byte[] frame = pending.take();
++                status("Sending phases...");
++                request(frame, "phases ok");
++                status("Mega: phases ok");
++            }
++        } catch (InterruptedException ex) {
++            Thread.currentThread().interrupt();
++        } catch (Exception ex) {
++            if (active) status("Error: " + ex.getMessage() + "; reconnect");
++        } finally {
++            ready = false;
++            active = false;
++            pending.clear();
++            transport.close();
++        }
++    }
++
++    private void request(byte[] command, String expected) throws IOException, InterruptedException {
++        if (!active) throw new InterruptedException();
++        replies.clear();
++        transport.write(command);
++        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
++        while (active) {
++            long remaining = deadline - System.nanoTime();
++            if (remaining <= 0) break;
++            String reply = replies.poll(remaining, TimeUnit.NANOSECONDS);
++            if (reply == null) break;
++            if (expected == null ? reply.matches("[0-9]+\\.[0-9]+(?:\\.[0-9]+)?") : expected.equals(reply)) return;
++            if (reply.equals("unknown cmd") || reply.toLowerCase(java.util.Locale.ROOT).startsWith("error")) {
++                throw new IOException("Mega: " + reply);
++            }
++            // Ignore boot banner and unrelated lines, never treat them as an ACK.
++        }
++        if (!active) throw new InterruptedException();
++        throw new IOException("No Mega " + (expected == null ? "version" : expected) + " reply");
++    }
++
++    @Override public synchronized void rxMsg(byte[] data, int len) {
++        for (int i = 0; i < len; i++) {
++            int c = data[i] & 255;
++            if (c == '\n') {
++                replies.offer(line.toString().trim());
++                line.setLength(0);
++            } else if (c != '\r') {
++                if (line.length() >= 256) line.setLength(0);
++                line.append((char)c);
++            }
++        }
++    }
++
++    /** Order number is the raw FPGA address; unused channels are always OFF. */
++    public byte[] encodePattern(List<Transducer> transducers) {
++        int[] phases = new int[CHANNELS];
++        boolean[] used = new boolean[CHANNELS];
++        Arrays.fill(phases, PHASE_OFF);
++        for (Transducer t : transducers) {
++            int channel = t.getOrderNumber() - number;
++            if (channel < 0 || channel >= CHANNELS) continue; // another device's range
++            if (used[channel]) throw new IllegalArgumentException("Duplicate FPGA channel: " + channel);
++            used[channel] = true;
++            if (!Float.isFinite(t.getAmplitude()) || !Float.isFinite(t.getPhase())
++                    || !Float.isFinite(t.getPhaseCorrection())) {
++                throw new IllegalArgumentException("Non-finite amplitude/phase at channel " + channel);
++            }
++            phases[channel] = t.getAmplitude() <= 0 ? PHASE_OFF : t.getDiscPhase(PHASE_OFF);
++        }
++        StringBuilder command = new StringBuilder("phases=");
++        for (int i = 0; i < CHANNELS; i++) {
++            if (i != 0) command.append(',');
++            command.append(phases[i]);
++        }
++        return command.append('\n').toString().getBytes(StandardCharsets.US_ASCII);
++    }
++
++    @Override public synchronized void sendPattern(List<Transducer> transducers) {
++        if (!active) return;
++        try {
++            byte[] command = encodePattern(transducers); // snapshot before returning to GUI
++            if (!pending.offer(command)) { pending.poll(); pending.offer(command); }
++        } catch (IllegalArgumentException ex) {
++            status("Invalid pattern: " + ex.getMessage());
++        }
++    }
++
++    // Sending "switch" after "phases=" would swap back to the previous FPGA buffer.
++    @Override public void switchBuffers() {}
++
++    @Override public void disconnect() {
++        active = false;
++        ready = false;
++        pending.clear();
++        if (worker != null) {
++            worker.interrupt();
++            try { worker.join(3000); }
++            catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
++        }
++        status("Disconnected");
++    }
++}
+--- a/AcousticFieldSim/src/acousticfield3d/utils/uartComm/Network.java
++++ b/AcousticFieldSim/src/acousticfield3d/utils/uartComm/Network.java
+@@ -24,8 +24,8 @@
+     private BufferedInputStream bufInputStream;
+     private BufferedOutputStream bufOutputStream;
+     
+-    private boolean connected = false;
+-    private boolean end = false;
++    private volatile boolean connected = false;
++    private volatile boolean end = false;
+     
+     private Thread reader;
+     private SerialPort serialPort;
+@@ -108,7 +108,9 @@
+             serialPort.setComPortTimeouts(SerialPort.TIMEOUT_READ_SEMI_BLOCKING, 0, 0);
+             serialPort.setComPortParameters(speed, 8, SerialPort.ONE_STOP_BIT, SerialPort.NO_PARITY);
+             
+-            serialPort.openPort();
++            if (!serialPort.openPort()) {
++                throw new IOException("Cannot open serial port " + portName);
++            }
+             
+             inputStream = serialPort.getInputStream();
+             outputStream = serialPort.getOutputStream();
+--- a/AcousticFieldSim/src/acousticfield3d/utils/uartComm/SerialComms.java
++++ b/AcousticFieldSim/src/acousticfield3d/utils/uartComm/SerialComms.java
+@@ -57,6 +57,10 @@
+         network.disconnect();
+     }
+ 
++    public boolean isConnected(){
++        return network.isConnected();
++    }
++
+     public void writeByte(int b){
+         network.writeByte(b);
+     }
+--- /dev/null
++++ b/AcousticFieldSim/test/acousticfield3d/gui/panels/MegaFPGAPanelTest.java
+@@ -0,0 +1,36 @@
++package acousticfield3d.gui.panels;
++
++import java.awt.*;
++import java.awt.image.BufferedImage;
++import java.io.File;
++import java.lang.reflect.Field;
++import javax.imageio.ImageIO;
++import javax.swing.*;
++
++public class MegaFPGAPanelTest {
++    static <T> T field(Object object, String name, Class<T> type) throws Exception {
++        Field f = object.getClass().getDeclaredField(name); f.setAccessible(true); return type.cast(f.get(object));
++    }
++    static void check(boolean value, String message) { if (!value) throw new AssertionError(message); }
++    public static void main(String[] args) throws Exception {
++        SwingUtilities.invokeAndWait(() -> {
++            try {
++                TransControlPanel panel = new TransControlPanel(null);
++                JComboBox combo = field(panel, "deviceCombo", JComboBox.class);
++                check(combo.getSelectedItem().equals("MegaFPGA"), "default device");
++                check(panel.stepsToPhase(16) == 1f, "32 phase divisions before connection");
++                for (String name : new String[]{"switchButton", "sendAnimButton", "multiplexButton", "durationsButton"})
++                    check(!field(panel, name, JButton.class).isEnabled(), "unsupported control " + name);
++                check(field(panel, "linkInfoLabel", JLabel.class).getText().contains("250000"), "PC baud visible");
++                combo.setSelectedIndex(1);
++                check(field(panel, "switchButton", JButton.class).isEnabled(), "legacy controls restored");
++                combo.setSelectedIndex(7);
++                panel.setSize(270, 490); panel.doLayout();
++                BufferedImage image = new BufferedImage(270, 490, BufferedImage.TYPE_INT_RGB);
++                Graphics2D g = image.createGraphics(); panel.printAll(g); g.dispose();
++                ImageIO.write(image, "png", new File(args[0]));
++            } catch (Exception ex) { throw new RuntimeException(ex); }
++        });
++        System.out.println("ALL PASS: MegaFPGA GUI selection, baud labels and supported controls");
++    }
++}
+--- /dev/null
++++ b/AcousticFieldSim/test/acousticfield3d/protocols/MegaFPGATest.java
+@@ -0,0 +1,110 @@
++package acousticfield3d.protocols;
++
++import acousticfield3d.simulation.Transducer;
++import acousticfield3d.utils.uartComm.SerialComms;
++import java.nio.charset.StandardCharsets;
++import java.util.*;
++import java.util.concurrent.*;
++import java.util.function.BooleanSupplier;
++
++/** No physical serial port is opened. Exercises the real worker and ACK parser. */
++public class MegaFPGATest {
++    static void check(boolean condition, String message) {
++        if (!condition) throw new AssertionError(message);
++    }
++    static void await(BooleanSupplier condition, String message) throws Exception {
++        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(3);
++        while (!condition.getAsBoolean() && System.nanoTime() < deadline) Thread.sleep(5);
++        check(condition.getAsBoolean(), message);
++    }
++    static Transducer source(int channel, float phase, float amplitude) {
++        Transducer t = new Transducer();
++        t.setOrderNumber(channel); t.setPhase(phase); t.setAmplitude(amplitude);
++        return t;
++    }
++    static String text(byte[] data) { return new String(data, StandardCharsets.US_ASCII); }
++    static int[] values(byte[] data) {
++        String command = text(data);
++        check(command.startsWith("phases=") && command.endsWith("\n"), "line framing");
++        return Arrays.stream(command.substring(7).trim().split(",")).mapToInt(Integer::parseInt).toArray();
++    }
++    static class Fake implements MegaFPGA.Transport {
++        final List<String> writes = new CopyOnWriteArrayList<>();
++        volatile SerialComms.Listener listener;
++        volatile boolean closed;
++        volatile boolean autoAck = true;
++        volatile boolean versionReply = true;
++        public void open(int port, SerialComms.Listener listener) { this.listener = listener; }
++        void reply(String value) {
++            // Deliver each byte separately, including CRLF.
++            for (byte b : value.getBytes(StandardCharsets.US_ASCII)) listener.rxMsg(new byte[]{b}, 1);
++        }
++        public void write(byte[] data) {
++            String command = text(data); writes.add(command);
++            if (command.equals("version\n") && versionReply) reply("MegaCommandSender ready\r\n1.1\r\n");
++            else if (command.startsWith("phases=") && autoAck) reply("phases ok\r\n");
++        }
++        public void close() { closed = true; }
++    }
++    public static void main(String[] args) throws Exception {
++        MegaFPGA encoder = new MegaFPGA();
++        check(encoder.getSpeed() == 250000 && encoder.getDivs() == 32 && MegaFPGA.FPGA_BAUD == 250000, "baud/divisions");
++        List<Transducer> sources = new ArrayList<>();
++        for (int i = 64; i < 256; i++) sources.add(source(i, (i % 32) / 16f, 1));
++        int[] v = values(encoder.encodePattern(sources));
++        check(v.length == 256, "fixed channel count");
++        for (int i = 0; i < 256; i++) check(v[i] == (i < 64 ? 32 : i % 32), "192 active/64 off at " + i);
++        Transducer t = source(255, -.125f, 1); t.setPhaseCorrection(.0625f);
++        v = values(encoder.encodePattern(Arrays.asList(t, source(3, 1, 0))));
++        check(v[255] == 31 && v[3] == 32 && v[0] == 32, "negative phase, correction and off");
++        encoder.setNumber(256);
++        check(values(encoder.encodePattern(Arrays.asList(source(256, 1, .5f))))[0] == 16, "offset and binary amplitude");
++        encoder.setNumber(0);
++        try { encoder.encodePattern(Arrays.asList(source(0, 0, 1), source(0, 1, 1))); throw new AssertionError("duplicate accepted"); }
++        catch (IllegalArgumentException expected) {}
++        try { encoder.encodePattern(Arrays.asList(source(0, Float.NaN, 1))); throw new AssertionError("NaN accepted"); }
++        catch (IllegalArgumentException expected) {}
++
++        Fake fake = new Fake();
++        MegaFPGA device = new MegaFPGA(fake, 10, 1000);
++        device.connect(1);
++        await(device::isReady, "version handshake");
++        device.sendPattern(sources); device.switchBuffers();
++        await(() -> device.getStatus().equals("Mega: phases ok"), "fragmented ACK");
++        check(fake.writes.size() == 2 && !fake.writes.contains("switch\n"), "one commit per frame");
++        fake.autoAck = false;
++        device.sendPattern(Collections.singletonList(source(0, 0, 1)));
++        await(() -> fake.writes.size() == 3, "first in-flight frame");
++        for (int i = 1; i <= 20; i++) device.sendPattern(Collections.singletonList(source(0, i / 16f, 1)));
++        check(fake.writes.size() == 3, "no new frame before ACK");
++        fake.reply("phases ok\n");
++        await(() -> fake.writes.size() == 4, "pending frame");
++        check(values(fake.writes.get(3).getBytes(StandardCharsets.US_ASCII))[0] == 20, "latest snapshot wins");
++        fake.reply("phases ok\n");
++        device.disconnect();
++        check(fake.closed && !device.isReady(), "disconnect closes worker/port");
++
++        Fake silent = new Fake(); silent.autoAck = false;
++        MegaFPGA timedOut = new MegaFPGA(silent, 0, 80);
++        timedOut.connect(1); await(timedOut::isReady, "timeout fixture connected");
++        timedOut.sendPattern(sources);
++        await(() -> silent.closed, "timeout closes port");
++        check(timedOut.getStatus().contains("No Mega phases ok"), "timeout visible");
++        timedOut.sendPattern(sources);
++        check(silent.writes.size() == 2, "no sends after lost ACK");
++        timedOut.disconnect();
++
++        Fake wrong = new Fake(); wrong.versionReply = false;
++        MegaFPGA wrongProtocol = new MegaFPGA(wrong, 0, 80);
++        wrongProtocol.connect(1); wrongProtocol.sendPattern(sources);
++        await(() -> wrong.closed, "missing handshake closes port");
++        check(wrong.writes.size() == 1 && !wrongProtocol.isReady(), "no phase data without handshake");
++        wrongProtocol.disconnect();
++
++        Fake boot = new Fake();
++        MegaFPGA duringReset = new MegaFPGA(boot, 500, 100);
++        duringReset.connect(1); duringReset.sendPattern(sources); duringReset.disconnect();
++        check(boot.writes.isEmpty() && boot.closed, "disconnect during reset cancels pending output");
++        System.out.println("ALL PASS: MegaFPGA encoding, handshake, ACK flow, coalescing, timeout and disconnect");
++    }
++}

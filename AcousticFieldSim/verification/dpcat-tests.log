@@ -1,0 +1,38 @@
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+C:\Users\admin\Documents\ChatGPT\acoustic\DPCAT_delivery\AcousticFieldSim\test\acousticfield3d\algorithms\ReflectorIntegrationTest.java:29: warning: Unsafe is internal proprietary API and may be removed in a future release
+        Field u=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");u.setAccessible(true);
+                        ^
+C:\Users\admin\Documents\ChatGPT\acoustic\DPCAT_delivery\AcousticFieldSim\test\acousticfield3d\algorithms\ReflectorIntegrationTest.java:30: warning: Unsafe is internal proprietary API and may be removed in a future release
+        MainForm mf=(MainForm)((sun.misc.Unsafe)u.get(null)).allocateInstance(MainForm.class);
+                                        ^
+2 warnings
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+PASS: direct/reflected fields, tilted normals, rigid/release boundaries, height and complex R
+PASS: first/second/third spatial derivatives and step convergence
+PASS: 192/256 focus, 64 OFF channels, correction/pin preservation, XML.GZ save/load
+PASS: pressure, Gorkov, force and Laplacian phase gradients vs finite differences
+ALL PASS: 1444 assertions
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+PASS: production cache/CPU pressure and Gorkov agreement; BFGS |p| 146.10870361328125 -> 857.1382446289062
+PASS: Swing height/gap controls, slice creation, pressure focus and calibration preservation
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+ALL PASS: MegaFPGA encoding, handshake, ACK flow, coalescing, timeout and disconnect
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+ALL PASS: MegaFPGA GUI selection, baud labels and supported controls
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+height 75 mm: cost 1456.25763 -> -1138.47875; CV 0.195458 -> 0.000004
+height 70 mm: cost 2427.81390 -> -1070.61132; CV 0.261489 -> 0.000002
+height 65 mm: cost 5670.18356 -> -880.75986; CV 0.443943 -> 0.000001
+Uniformity fixture CV 0.618877 -> 0.000002 (not a general guarantee)
+PASS DPCAT core: 1901 assertions
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+Mean circular difference warm 0.098958 vs independent random 7.755208 (codes)
+PASS DPCAT trajectory, warm start, wide/X/Z, persistence, CSV and preview timing
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+PASS DPCAT Swing controls, background sequence, selected-frame application, slice preview, timing and validation
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+PASS DPCAT reliable queue, ownership, exact ordering, ACK timeout, dwell, cancellation, stale model and off-grid rejection (mock transport)
+Built: C:\Users\admin\Documents\ChatGPT\acoustic\DPCAT_delivery\AcousticFieldSim\dist\AcousticField3D.jar

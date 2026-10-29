@@ -1,0 +1,1422 @@
+--- a/src/acousticfield3d/algorithms/AcousticPropagation.java
++++ b/src/acousticfield3d/algorithms/AcousticPropagation.java
+@@ -0,0 +1,63 @@
++package acousticfield3d.algorithms;
++
++import acousticfield3d.math.Vector3f;
++import acousticfield3d.simulation.ReflectorSettings;
++import acousticfield3d.simulation.Simulation;
++import acousticfield3d.simulation.Transducer;
++
++/**
++ * Ultraino's sinc aperture model plus a single infinite-plane image source.
++ * Phasor convention exp(i*k*r+i*phase); pressure reflection R=rho*exp(i*theta).
++ * Images are mathematical sources only, never extra hardware channels.
++ */
++public final class AcousticPropagation {
++    private AcousticPropagation() {}
++
++    /** Immutable geometry snapshot, reusable for a spatial derivative stencil. */
++    public static final class Source {
++        public final double x, y, z, nx, ny, nz, k, aperture;
++        public Source(Transducer t, double speed) {
++            Vector3f p = t.getTransform().getTranslation();
++            Vector3f n = t.getTransform().getRotation().mult(Vector3f.UNIT_Y, new Vector3f());
++            x = p.x; y = p.y; z = p.z;
++            double norm = n.length();
++            nx = n.x / norm; ny = n.y / norm; nz = n.z / norm;
++            k = 2.0 * Math.PI * t.getFrequency() / speed;
++            aperture = t.getApperture();
++        }
++    }
++
++    public static void transfer(Transducer t, Simulation s, double px, double py, double pz,
++            double[] out) {
++        transfer(new Source(t, s.getMediumSpeed()), s.getReflector(), px, py, pz, true, out);
++    }
++
++    public static void transfer(Source t, ReflectorSettings r, double px, double py, double pz,
++            boolean directivity, double[] out) {
++        out[0] = 0; out[1] = 0;
++        add(t, t.x, t.y, t.z, t.nx, t.ny, t.nz, px, py, pz, 1, 0, directivity, out);
++        if (r.isEnabled() && r.getMagnitude() != 0) {
++            // Reflect both source position and its radiation normal about y=H.
++            add(t, t.x, 2 * r.getPlaneY() - t.y, t.z, t.nx, -t.ny, t.nz,
++                    px, py, pz, r.getMagnitude(), Math.toRadians(r.getPhaseDegrees()), directivity, out);
++        }
++    }
++
++    private static void add(Source t, double sx, double sy, double sz,
++            double nx, double ny, double nz, double px, double py, double pz,
++            double gain, double phase, boolean directivity, double[] out) {
++        double dx = px - sx, dy = py - sy, dz = pz - sz;
++        // Only regularizes the singular source location; do not interpret fields there physically.
++        double distance = Math.max(1e-9, Math.sqrt(dx*dx + dy*dy + dz*dz));
++        double dir = 1;
++        if (directivity) {
++            double cosine = Math.max(-1, Math.min(1, (dx*nx + dy*ny + dz*nz) / distance));
++            double q = 0.5 * t.k * t.aperture * Math.sqrt(Math.max(0, 1 - cosine*cosine));
++            dir = Math.abs(q) < 1e-8 ? 1 : Math.sin(q) / q;
++        }
++        double amplitude = gain * dir / distance;
++        double angle = t.k * distance + phase;
++        out[0] += amplitude * Math.cos(angle);
++        out[1] += amplitude * Math.sin(angle);
++    }
++}
+--- a/src/acousticfield3d/algorithms/BFGSOptimization.java
++++ b/src/acousticfield3d/algorithms/BFGSOptimization.java
+@@ -30,6 +30,8 @@
+  
+     
+     public void calc(final MainForm mf){
++        mf.renderer.updateTransducersBuffers(mf.simulation);
++        if (controlPoints.isEmpty()) return;
+         IFunction function;
+         if (form.isPressure()){
+             function = new MultiplePressureAdaptor(controlPoints,  mf );
+@@ -52,6 +54,8 @@
+     }
+     
+     public void calcMultiPressure(final MainForm mf, final int iters){
++        mf.renderer.updateTransducersBuffers(mf.simulation);
++        if (controlPoints.isEmpty()) return;
+         calc(mf, new MultiplePressureAdaptor(controlPoints, mf), iters);
+     }
+     
+--- a/src/acousticfield3d/algorithms/CachedPointFieldCalc.java
++++ b/src/acousticfield3d/algorithms/CachedPointFieldCalc.java
+@@ -14,7 +14,6 @@
+  */
+ public class CachedPointFieldCalc {
+     Vector3f position = new Vector3f();
+-    boolean isReflector;
+     
+     Vector2f pre = new Vector2f();
+     Vector2f gx = new Vector2f(), gy = new Vector2f(), gz = new Vector2f();
+@@ -64,22 +63,22 @@
+     double lowPressureK = 1;
+     
+     public static CachedPointFieldCalc create(final Vector3f pos, MainForm mf){
+-        //final boolean reflection = mf.simulation.isReflection();
+-        //final boolean directivity = !mf.miscPanel.isAnalyticalNoDirShaders();
++        // Images share the physical channel phase; optimizer dimension never doubles.
+         final boolean reflection = false;
+         final boolean directivity = true;
+         
+-        final float h = mf.simulation.getWavelenght()/ mf.miscPanel.getFiniteDiffH();
++        final float requestedDiv = mf.miscPanel.getFiniteDiffH();
++        final float divisor = Float.isFinite(requestedDiv) ? Math.max(32, requestedDiv) : 64;
++        final float h = mf.simulation.getWavelenght() / divisor;
+         CachedPointFieldCalc cp = new CachedPointFieldCalc(pos, reflection,directivity, h, mf.renderer);
+         return cp;        
+     }
+     
+     public CachedPointFieldCalc(final Vector3f pos, boolean reflectorEnabled, boolean useDirectivity, float h, Renderer r) {
+-        this.isReflector = reflectorEnabled;
+         this.useDirectivity = useDirectivity;
+         this.h = h;
+         nTotalTrans = r.getnTransducers();
+-        nTrans = reflectorEnabled ? nTotalTrans/2 : nTotalTrans;
++        nTrans = nTotalTrans;
+         position.set( pos );
+     }
+ 
+@@ -126,6 +125,7 @@
+     }
+     public void gradientPressure(double[] g){
+         final double p = pre.length();
++        if (p < 1e-30) { java.util.Arrays.fill(g, 0); return; }
+         final double aDivP = pre.x / p;
+         final double bDivP = pre.y / p;
+         for(int i = 0; i < nTrans; ++i){
+@@ -344,6 +344,8 @@
+    
+     
+     public void updateGorkovLaplacian(final double[] v){
++        gxxx.reset(); gyyy.reset(); gzzz.reset();
++        gxyy.reset(); gxzz.reset(); gyxx.reset(); gyzz.reset(); gzxx.reset(); gzyy.reset();
+         pre.set(0);
+         gx.set(0); gy.set(0); gz.set(0);
+         gxx.set(0); gyy.set(0); gzz.set(0);
+@@ -423,121 +425,56 @@
+         }
+     }
+     
+-    public double evalGorkovLaplacian(){  
+-        return  K1 * (
+-                  gx.dot(gx) + pre.dot(gxx) + gy.dot(gy) + pre.dot(gyy) + gz.dot(gz) + pre.dot(gzz)) 
+-                - K2*
+-                ( gxx.dot(gxx) + gx.dot(gxxx) + gxy.dot(gxy) + gy.dot(gyxx) + gxz.dot(gxz) + gz.dot(gzxx) +
+-                  gxy.dot(gxy) + gx.dot(gxyy) + gyy.dot(gyy) + gy.dot(gyyy) + gyz.dot(gyz) + gz.dot(gzyy) + 
+-                  gxz.dot(gxz) + gx.dot(gxzz) + gyz.dot(gyz) + gy.dot(gyzz) + gzz.dot(gzz) + gz.dot(gzzz));
+-    }
+-
+-    public double evalGorkovLaplacianX(){  
+-        return  K1 * (
+-                  gx.dot(gx) + pre.dot(gxx)) 
+-                - K2*
+-                ( gxx.dot(gxx) + gx.dot(gxxx) +
+-                  gxy.dot(gxy) + gx.dot(gxyy) + 
+-                  gxz.dot(gxz) + gx.dot(gxzz) );
+-    }
+-    public double evalGorkovLaplacianY(){  
+-        return  K1 * (
+-                  gy.dot(gy) + pre.dot(gyy)) 
+-                - K2*
+-                ( gxy.dot(gxy) + gy.dot(gyxx) +
+-                  gyy.dot(gyy) + gy.dot(gyyy) + 
+-                  gyz.dot(gyz) + gy.dot(gyzz) );
+-    }
+-    public double evalGorkovLaplacianZ(){  
+-        return  K1 * (
+-                  gz.dot(gz) + pre.dot(gzz)) 
+-                - K2*
+-                ( gxz.dot(gxz) + gz.dot(gzxx) +
+-                  gyz.dot(gyz) + gz.dot(gzyy) + 
+-                  gzz.dot(gzz) + gz.dot(gzzz));
+-    }
+-    public void gradientGorkovLaplacian(double[] g){
+-        for(int i = 0; i < nTrans; ++i){
+-            g[i] = K1 * ( 
+-                    gx.x*-xb[i] + -xb[i]*gx.x + gx.y*xa[i] + xa[i]*gx.y +
+-                    pre.x*-xxb[i] + -b[i]*gxx.x + pre.y*xxa[i] + a[i]*gxx.y +
+-                    gy.x*-yb[i] + -yb[i]*gy.x + gy.y*ya[i] + ya[i]*gy.y +
+-                    pre.x*-yyb[i] + -b[i]*gyy.x + pre.y*yya[i] + a[i]*gyy.y +
+-                    gz.x*-zb[i] + -zb[i]*gz.x + gz.y*za[i] + za[i]*gz.y +
+-                    pre.x*-zzb[i] + -b[i]*gzz.x + pre.y*zza[i] + a[i]*gzz.y ) - 
+-                   K2 * ( 
+-                    gxx.x*-xxb[i] + -xxb[i]*gxx.x + gxx.y*xxa[i] + xxa[i]*gxx.y +
+-                    gx.x*-xxxb[i] + -xb[i]*gxxx.x + gx.y*xxxa[i] + xa[i]*gxxx.y +
+-                    gxy.x*-xyb[i] + -xyb[i]*gxy.x + gxy.y*xya[i] + xya[i]*gxy.y +
+-                    gy.x*-yxxb[i] + -yb[i]*gyxx.x + gy.y*yxxa[i] + ya[i]*gyxx.y +
+-                    gxz.x*-xzb[i] + -xzb[i]*gxz.x + gxz.y*xza[i] + xza[i]*gxz.y +
+-                    gz.x*-zxxb[i] + -zb[i]*gzxx.x + gz.y*zxxa[i] + za[i]*gzxx.y +
+-                    gxy.x*-xyb[i] + -xyb[i]*gxy.x + gxy.y*xya[i] + xya[i]*gxy.y +
+-                    gx.x*-xyyb[i] + -xb[i]*gxyy.x + gx.y*xyya[i] + xa[i]*gxyy.y +
+-                    gyy.x*-yyb[i] + -yyb[i]*gyy.x + gyy.y*yya[i] + yya[i]*gyy.y +
+-                    gy.x*-yyyb[i] + -yb[i]*gyyy.x + gy.y*yyya[i] + ya[i]*gyyy.y +
+-                    gyz.x*-yzb[i] + -yzb[i]*gyz.x + gyz.y*yza[i] + yza[i]*gyz.y +
+-                    gz.x*-zyyb[i] + -zb[i]*gzyy.x + gz.y*zyya[i] + za[i]*gzyy.y +
+-                    gxz.x*-xzb[i] + -xzb[i]*gxz.x + gxz.y*xza[i] + xza[i]*gxz.y +
+-                    gx.x*-xzzb[i] + -xb[i]*gxzz.x + gx.y*xzza[i] + xa[i]*gxzz.y +
+-                    gyz.x*-yzb[i] + -yzb[i]*gyz.x + gyz.y*yza[i] + yza[i]*gyz.y +
+-                    gy.x*-yzzb[i] + -yb[i]*gyzz.x + gy.y*yzza[i] + ya[i]*gyzz.y +
+-                    gzz.x*-zzb[i] + -zzb[i]*gzz.x + gzz.y*zza[i] + zza[i]*gzz.y +
+-                    gz.x*-zzzb[i] + -zb[i]*gzzz.x + gz.y*zzza[i] + za[i]*gzzz.y);
+-        }
+-        
+-        
+-    }
+-    
+-    public void gradientGorkovLaplacianX(double[] g){
+-        for(int i = 0; i < nTrans; ++i){
+-            g[i] = K1 * ( 
+-                    gx.x*-xb[i] + -xb[i]*gx.x + gx.y*xa[i] + xa[i]*gx.y +
+-                    pre.x*-xxb[i] + -b[i]*gxx.x + pre.y*xxa[i] + a[i]*gxx.y) - 
+-                   K2 * ( 
+-                    gxx.x*-xxb[i] + -xxb[i]*gxx.x + gxx.y*xxa[i] + xxa[i]*gxx.y +
+-                    gx.x*-xxxb[i] + -xb[i]*gxxx.x + gx.y*xxxa[i] + xa[i]*gxxx.y +
+-                    gxy.x*-xyb[i] + -xyb[i]*gxy.x + gxy.y*xya[i] + xya[i]*gxy.y +
+-                    gx.x*-xyyb[i] + -xb[i]*gxyy.x + gx.y*xyya[i] + xa[i]*gxyy.y +
+-                    gxz.x*-xzb[i] + -xzb[i]*gxz.x + gxz.y*xza[i] + xza[i]*gxz.y +
+-                    gx.x*-xzzb[i] + -xb[i]*gxzz.x + gx.y*xzza[i] + xa[i]*gxzz.y);
+-        }
+-    }
+-        
+-    public void gradientGorkovLaplacianY(double[] g){
+-        for(int i = 0; i < nTrans; ++i){
+-            g[i] = K1 * ( 
+-                    gy.x*-yb[i] + -yb[i]*gy.x + gy.y*ya[i] + ya[i]*gy.y +
+-                    pre.x*-yyb[i] + -b[i]*gyy.x + pre.y*yya[i] + a[i]*gyy.y ) - 
+-                   K2 * ( 
+-                    gxy.x*-xyb[i] + -xyb[i]*gxy.x + gxy.y*xya[i] + xya[i]*gxy.y +
+-                    gy.x*-yxxb[i] + -yb[i]*gyxx.x + gy.y*yxxa[i] + ya[i]*gyxx.y +
+-                    gyy.x*-yyb[i] + -yyb[i]*gyy.x + gyy.y*yya[i] + yya[i]*gyy.y +
+-                    gy.x*-yyyb[i] + -yb[i]*gyyy.x + gy.y*yyya[i] + ya[i]*gyyy.y +
+-                    gyz.x*-yzb[i] + -yzb[i]*gyz.x + gyz.y*yza[i] + yza[i]*gyz.y +
+-                    gy.x*-yzzb[i] + -yb[i]*gyzz.x + gy.y*yzza[i] + ya[i]*gyzz.y);
+-        }
+-        
+-
+-    }
+-            
+-     public void gradientGorkovLaplacianZ(double[] g){
+-                for(int i = 0; i < nTrans; ++i){
+-            g[i] = K1 * (
+-                    gz.x*-zb[i] + -zb[i]*gz.x + gz.y*za[i] + za[i]*gz.y +
+-                    pre.x*-zzb[i] + -b[i]*gzz.x + pre.y*zza[i] + a[i]*gzz.y ) - 
+-                   K2 * ( 
+-                    gxz.x*-xzb[i] + -xzb[i]*gxz.x + gxz.y*xza[i] + xza[i]*gxz.y +
+-                    gz.x*-zxxb[i] + -zb[i]*gzxx.x + gz.y*zxxa[i] + za[i]*gzxx.y +
+-                    gyz.x*-yzb[i] + -yzb[i]*gyz.x + gyz.y*yza[i] + yza[i]*gyz.y +
+-                    gz.x*-zyyb[i] + -zb[i]*gzyy.x + gz.y*zyya[i] + za[i]*gzyy.y +
+-                    gzz.x*-zzb[i] + -zzb[i]*gzz.x + gzz.y*zza[i] + zza[i]*gzz.y +
+-                    gz.x*-zzzb[i] + -zb[i]*gzzz.x + gz.y*zzza[i] + za[i]*gzzz.y);
+-        }
+-    }
+-    
+-    //</editor-fold>
+-   
++    private Vector2f[] firstFields() { return new Vector2f[]{gx,gy,gz}; }
++    private Vector2f[][] secondFields() {
++        return new Vector2f[][]{{gxx,gxy,gxz},{gxy,gyy,gyz},{gxz,gyz,gzz}};
++    }
++    private Vector2f[][] thirdFields() {
++        // [differentiation axis][velocity/pressure-gradient component]
++        return new Vector2f[][]{{gxxx,gyxx,gzxx},{gxyy,gyyy,gzyy},{gxzz,gyzz,gzzz}};
++    }
++    private double evalLaplacianAxis(int axis) {
++        Vector2f[] first=firstFields(); Vector2f[][] second=secondFields(),third=thirdFields();
++        double v=K1*(first[axis].dot(first[axis])+pre.dot(second[axis][axis]));
++        for(int j=0;j<3;j++) v-=K2*(second[axis][j].dot(second[axis][j])+first[j].dot(third[axis][j]));
++        return v;
++    }
++    public double evalGorkovLaplacian() { return evalLaplacianAxis(0)+evalLaplacianAxis(1)+evalLaplacianAxis(2); }
++    public double evalGorkovLaplacianX() { return evalLaplacianAxis(0); }
++    public double evalGorkovLaplacianY() { return evalLaplacianAxis(1); }
++    public double evalGorkovLaplacianZ() { return evalLaplacianAxis(2); }
++
++    private static double phaseDot(Vector2f u, Vector2f v,
++            double[] ua,double[] ub,double[] va,double[] vb,int i) {
++        return -ub[i]*v.x+ua[i]*v.y-u.x*vb[i]+u.y*va[i];
++    }
++    private void gradientLaplacianAxis(int axis,double[] g) {
++        Vector2f[] first=firstFields(); Vector2f[][] second=secondFields(),third=thirdFields();
++        double[][] fA={xa,ya,za},fB={xb,yb,zb};
++        double[][][] sA={{xxa,xya,xza},{xya,yya,yza},{xza,yza,zza}};
++        double[][][] sB={{xxb,xyb,xzb},{xyb,yyb,yzb},{xzb,yzb,zzb}};
++        double[][][] tA={{xxxa,yxxa,zxxa},{xyya,yyya,zyya},{xzza,yzza,zzza}};
++        double[][][] tB={{xxxb,yxxb,zxxb},{xyyb,yyyb,zyyb},{xzzb,yzzb,zzzb}};
++        for(int i=0;i<nTrans;i++) {
++            g[i]=K1*(phaseDot(first[axis],first[axis],fA[axis],fB[axis],fA[axis],fB[axis],i)
++                +phaseDot(pre,second[axis][axis],a,b,sA[axis][axis],sB[axis][axis],i));
++            for(int j=0;j<3;j++) g[i]-=K2*(
++                phaseDot(second[axis][j],second[axis][j],sA[axis][j],sB[axis][j],sA[axis][j],sB[axis][j],i)
++                +phaseDot(first[j],third[axis][j],fA[j],fB[j],tA[axis][j],tB[axis][j],i));
++        }
++    }
++    public void gradientGorkovLaplacianX(double[] g) { gradientLaplacianAxis(0,g); }
++    public void gradientGorkovLaplacianY(double[] g) { gradientLaplacianAxis(1,g); }
++    public void gradientGorkovLaplacianZ(double[] g) { gradientLaplacianAxis(2,g); }
++    public void gradientGorkovLaplacian(double[] g) {
++        gradientLaplacianAxis(0,g);
++        double[] tmp=new double[nTrans];
++        for(int axis=1;axis<3;axis++) {
++            gradientLaplacianAxis(axis,tmp);
++            for(int i=0;i<nTrans;i++) g[i]+=tmp[i];
++        }
++    }
++
+     public void reset(){
+         pre.reset();
+         gx.reset(); gy.reset(); gz.reset();
+@@ -553,363 +490,47 @@
+         nor.reset();
+     }
+     
+-    public static float calcDir(float tx, float ty, float tz,final Vector3f n, float k){
+-        final float dot = tx*n.x + ty*n.y + tz*n.z;
+-        final float d2 = tx*tx + ty*ty + tz*tz;
+-        //final float sinAngle = FastMath.sqrt(1.0f - (dot*dot / d2) );
+-        final float angle = M.acos( dot / n.length() / M.sqrt(d2) );
+-        final float sinAngle = M.sin( angle );
+-        //System.out.println( "angle " + sinAngle);
+-        //return 1.0f - 0.25f*sinAngle - 0.6f*sinAngle*sinAngle;
+-        
+-        //return FastMath.sinc( 0.5f * k * 0.077f * sinAngle);
+-        
+-        final float dum = k * (0.009f/2.0f) * sinAngle;
+-        return (float)M.j1(dum) / dum;
+-        
+-        //return 1.0f / (1.0f + 0.0f*sinAngle + 128.0f*sinAngle*sinAngle);
+-    }
+-        
+-    public void initFieldConstantsOnlyForAmp(Renderer r){
+-        pre.reset();
+-        swap.reset(); tmp.reset();
+-        diffVec.reset(); diffVecS.reset();
+-        tPos.reset();
+-        nor.reset();
+-        
+-        final FloatBuffer positions = r.getPositions();
+-        final FloatBuffer specs = r.getSpecs();
+-        final FloatBuffer normals = r.getNormals();
+-       
+-        for(int i = 0; i < nTotalTrans; ++i){
+-            final int i3 = i*3;
+-            final int i4 = i*4;
+-            final float x,y,z;
+-            
+-            x = positions.get(i3+0); y = positions.get(i3+1); z = positions.get(i3+2);
+-            tPos.set(x , y , z);
+-            nor.set( normals.get(i3+0), normals.get(i3+1), normals.get(i3+2) );
+-            position.subtract(tPos, diffVec);
+-            float d = diffVec.length();
+-          
+-            float k = specs.get(i4 + 0);
+-            float kd = k*d;
+-            float cosKD = M.cos(kd);
+-            float sinKD = M.sin(kd);
+-
+-            diffVecS.set(diffVec).multLocal(diffVec);
+-            float amp = specs.get(i4 + 1);
+- 
+-            //0 derivative
+-            swap.x =  cosKD;
+-            swap.y =  sinKD;
+-            swap.multLocal( amp / d );
+-            ka[i] = swap.x; kb[i] = swap.y;
+-
+-            //directivity
+-            if (useDirectivity) {
+-                final float dir = calcDir(x, y, z, nor, k);
+-                ka[i] *= dir; kb[i] *= dir;
++    public void initFieldConstantsOnlyForAmp(Renderer r) {
++        fillPropagationConstants(r.getForm(), false);
++    }
++
++    public void initFieldConstants(final MainForm mf) {
++        reset();
++        final Vector2f constants = new Vector2f();
++        CalcField.calcGorkovConstants(mf.scene.getParticleRadious(), mf, constants);
++        M1 = constants.x; M2 = constants.y;
++        K1 = 2*M1; K2 = 2*M2;
++        fillPropagationConstants(mf, true);
++    }
++
++    private void fillPropagationConstants(MainForm mf, boolean derivatives) {
++        double[][] re = {ka,xka,yka,zka,xyka,xzka,yzka,xxka,yyka,zzka,
++            xxxka,yyyka,zzzka,xyyka,xzzka,yxxka,yzzka,zxxka,zyyka};
++        double[][] im = {kb,xkb,ykb,zkb,xykb,xzkb,yzkb,xxkb,yykb,zzkb,
++            xxxkb,yyykb,zzzkb,xyykb,xzzkb,yxxkb,yzzkb,zxxkb,zyykb};
++        final acousticfield3d.simulation.Simulation s = mf.simulation;
++        if (s.transducers.size() != nTrans) throw new IllegalStateException("Array changed; restart optimization");
++        final boolean discretize = mf.miscPanel.isAmpDiscretizer();
++        final float step = 1.0f / mf.miscPanel.getAmpDiscretization();
++        final double dh = Float.isFinite(h) && h > 0 ? h : s.getWavelenght()/64.0;
++        for (int i=0; i<nTrans; i++) {
++            acousticfield3d.simulation.Transducer t = s.transducers.get(i);
++            double amp = t.calcRealDiscAmplitude(discretize, step);
++            if (amp == 0) {
++                for (int d=0; d<re.length; d++) { re[d][i]=0; im[d][i]=0; }
++                continue;
+             }
+-                        
+-        }
+-        
+-        if(isReflector){
+-            for(int i = 0; i < nTrans; ++i){
+-                ka[i] +=  ka[i + nTrans]; 
+-                kb[i] +=  kb[i + nTrans];
++            AcousticPropagation.Source source = new AcousticPropagation.Source(t, s.getMediumSpeed());
++            if (derivatives) {
++                double[][] v = PropagationDerivatives.evaluate(source, s.getReflector(),
++                        position.x, position.y, position.z, dh, useDirectivity);
++                for (int d=0; d<re.length; d++) { re[d][i]=amp*v[d][0]; im[d][i]=amp*v[d][1]; }
++            } else {
++                double[] v = new double[2];
++                AcousticPropagation.transfer(source, s.getReflector(), position.x, position.y,
++                        position.z, useDirectivity, v);
++                ka[i]=amp*v[0]; kb[i]=amp*v[1];
+             }
+         }
+-        
+-    }
+-    
+-    public void initFieldConstants(final MainForm mf){
+-        reset();
+-        
+-        final Renderer r = mf.renderer;
+-        final Vector2f gorkovConsts = new Vector2f();
+-        
+-        CalcField.calcGorkovConstants(mf.scene.getParticleRadious() , mf, gorkovConsts);
+-        M1 = gorkovConsts.x;
+-        M2 = gorkovConsts.y;
+-        
+-        final FloatBuffer positions = r.getPositions();
+-        final FloatBuffer specs = r.getSpecs();
+-        final FloatBuffer normals = r.getNormals();
+-                
+-        for(int i = 0; i < nTotalTrans; ++i){
+-            final int i3 = i*3;
+-            final int i4 = i*4;
+-            final float x,y,z;
+-            
+-            x = positions.get(i3+0); y = positions.get(i3+1); z = positions.get(i3+2);
+-            tPos.set(x , y , z);
+-            nor.set( normals.get(i3+0), normals.get(i3+1), normals.get(i3+2) );
+-            position.subtract(tPos, diffVec);
+-            float d = diffVec.length();
+-            float d2 = d*d;
+-            float d3 = d2*d;
+-            float d5 = d2*d3;
+-            float d7 = d5*d2;
+-          
+-            float k = specs.get(i4 + 0);
+-            float kd = k*d;
+-            float k2 = k*k;
+-            float d2k2 = d2 * k2;
+-            float cosKD = M.cos(kd);
+-            float sinKD = M.sin(kd);
+-            float KDcosKD = kd * cosKD;
+-            float KDsinKD = kd * sinKD;
+-
+-            diffVecS.set(diffVec).multLocal(diffVec);
+-            float amp = specs.get(i4 + 1);
+- 
+-            //0 derivative
+-            swap.x =  cosKD;
+-            swap.y =  sinKD;
+-            swap.multLocal( amp / d );
+-            ka[i] = swap.x; kb[i] = swap.y;
+-            
+-            //1 derivatives
+-            tmp.x = -(cosKD+KDsinKD);
+-            tmp.y = KDcosKD-sinKD;
+-            tmp.multLocal( amp / d3 );
+-            tmp.mult( diffVec.x, swap);
+-            xka[i] = swap.x; xkb[i] = swap.y;       
+-            tmp.mult( diffVec.y, swap);
+-            yka[i] = swap.x; ykb[i] = swap.y;         
+-            tmp.mult( diffVec.z, swap);
+-            zka[i] = swap.x; zkb[i] = swap.y;
+-                    
+-            //1,1 derivatives
+-            swap.x = 3.0f-d2k2;
+-            swap.y = 3.0f;
+-            tmp.x =  swap.x*cosKD+swap.y*KDsinKD;
+-            tmp.y = -(swap.y*KDcosKD-swap.x*sinKD);
+-            tmp.multLocal(amp / d5);
+-            tmp.mult( diffVec.x * diffVec.y, swap);
+-            xyka[i] = swap.x; xykb[i] = swap.y;         
+-            tmp.mult( diffVec.x * diffVec.z, swap);
+-            xzka[i] = swap.x; xzkb[i] = swap.y;          
+-            tmp.mult( diffVec.y * diffVec.z, swap);
+-            yzka[i] = swap.x; yzkb[i] = swap.y;
+-            
+-            //2 derivatives
+-            tmp.x = d2 + (d2k2 - 3.0f) * diffVecS.x;
+-            tmp.y = d2 - 3.0f * diffVecS.x;
+-            swap.x = - (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y =  tmp.y*KDcosKD-tmp.x*sinKD;
+-            swap.multLocal(amp / d5);
+-            xxka[i] = swap.x; xxkb[i] = swap.y;
+-                     
+-            tmp.x = d2 + (d2k2 - 3.0f) * diffVecS.y;
+-            tmp.y = d2 - 3.0f * diffVecS.y;
+-            swap.x = - (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y =  tmp.y*KDcosKD-tmp.x*sinKD;
+-            swap.multLocal(amp / d5);
+-            yyka[i] = swap.x; yykb[i] = swap.y;
+-                       
+-            tmp.x = d2 + (d2k2 - 3.0f) * diffVecS.z;
+-            tmp.y = d2 - 3.0f * diffVecS.z;
+-            swap.x = - (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y =  tmp.y*KDcosKD-tmp.x*sinKD;
+-            swap.multLocal(amp / d5);
+-            zzka[i] = swap.x; zzkb[i] = swap.y;
+-                       
+-            //1,2 derivatives
+-            swap.x = -15.0f*diffVecS.x + d2*(3.0f-k2*(d2-6.0f*diffVecS.x));
+-            swap.y = -15.0f*diffVecS.x + d2*(3.0f + k2*diffVecS.x);
+-            tmp.x = amp / d7 * (swap.x*cosKD+swap.y*KDsinKD);
+-            tmp.y = amp / d7 * -(swap.y*KDcosKD-swap.x*sinKD);
+-            yxxka[i] = tmp.x * diffVec.y; yxxkb[i] = tmp.y * diffVec.y;          
+-            zxxka[i] = tmp.x * diffVec.z; zxxkb[i] = tmp.y * diffVec.z;          
+-            swap.x = -15.0f*diffVecS.y + d2*(3.0f-k2*(d2-6.0f*diffVecS.y));
+-            swap.y = -15.0f*diffVecS.y + d2*(3.0f + k2*diffVecS.y);
+-            tmp.x = amp / d7 * (swap.x*cosKD+swap.y*KDsinKD);
+-            tmp.y = amp / d7 * -(swap.y*KDcosKD-swap.x*sinKD);
+-            xyyka[i] = tmp.x * diffVec.x; xyykb[i] = tmp.y * diffVec.x;           
+-            zyyka[i] = tmp.x * diffVec.z; zyykb[i] = tmp.y * diffVec.z;          
+-            swap.x = -15.0f*diffVecS.z + d2*(3.0f-k2*(d2-6.0f*diffVecS.z));
+-            swap.y = -15.0f*diffVecS.z + d2*(3.0f + k2*diffVecS.z);
+-            tmp.x = amp / d7 * (swap.x*cosKD+swap.y*KDsinKD);
+-            tmp.y = amp / d7 * -(swap.y*KDcosKD-swap.x*sinKD);
+-            xzzka[i] = tmp.x * diffVec.x; xzzkb[i] = tmp.y * diffVec.x;
+-            yzzka[i] = tmp.x * diffVec.y; yzzkb[i] = tmp.y * diffVec.y;
+-            
+-            //3 derivatives
+-            tmp.x = -3.0f * (5.0f *diffVecS.x + d2 * (k2*(d2 - 2.0f*diffVecS.x)-3.0f));
+-            tmp.y = -15.0f * diffVecS.x + d2*(9.0f +k2*diffVecS.x);
+-            swap.x = amp / d7 * diffVec.x * (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y = amp / d7 * diffVec.x * -(tmp.y*KDcosKD-tmp.x*sinKD);
+-            xxxka[i] = swap.x; xxxkb[i] = swap.y;
+-            
+-            tmp.x = -3.0f * (5.0f *diffVecS.y + d2 * (k2*(d2 - 2.0f*diffVecS.y)-3.0f));
+-            tmp.y = -15.0f * diffVecS.y + d2*(9.0f +k2*diffVecS.y);
+-            swap.x = amp / d7 * diffVec.y * (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y = amp / d7 * diffVec.y * -(tmp.y*KDcosKD-tmp.x*sinKD);
+-            yyyka[i] = swap.x; yyykb[i] = swap.y;
+-            
+-            tmp.x = -3.0f * (5.0f *diffVecS.z + d2 * (k2*(d2 - 2.0f*diffVecS.z)-3.0f));
+-            tmp.y = -15.0f * diffVecS.z + d2*(9.0f +k2*diffVecS.z);
+-            swap.x = amp / d7 * diffVec.z * (tmp.x*cosKD+tmp.y*KDsinKD);
+-            swap.y = amp / d7 * diffVec.z * -(tmp.y*KDcosKD-tmp.x*sinKD);
+-            zzzka[i] = swap.x; zzzkb[i] = swap.y;
+-            
+-            //directivity
+-            if (useDirectivity) {
+-                final float dir = calcDir(x, y, z, nor, k);
+-                final float dirX = (calcDir(x + h, y, z, nor, k) - calcDir(x - h, y, z, nor, k)) / (2.0f * h);
+-                final float dirY = (calcDir(x, y + h, z, nor, k) - calcDir(x, y - h, z, nor, k)) / (2.0f * h);
+-                final float dirZ = (calcDir(x, y, z + h, nor, k) - calcDir(x, y, z - h, nor, k)) / (2.0f * h);
+-                final float dirXY
+-                        = ((calcDir(x + h, y + h, z, nor, k) - calcDir(x - h, y + h, z, nor, k))
+-                        - (calcDir(x + h, y - h, z, nor, k) - calcDir(x - h, y - h, z, nor, k))) / (4.0f * h * h);
+-                final float dirXZ
+-                        = ((calcDir(x + h, y, z + h, nor, k) - calcDir(x - h, y, z + h, nor, k))
+-                        - (calcDir(x + h, y, z - h, nor, k) - calcDir(x - h, y, z - h, nor, k))) / (4.0f * h * h);
+-                final float dirYZ
+-                        = ((calcDir(x, y + h, z + h, nor, k) - calcDir(x, y - h, z + h, nor, k))
+-                        - (calcDir(x, y + h, z - h, nor, k) - calcDir(x, y - h, z - h, nor, k))) / (4.0f * h * h);
+-                final float dirXX
+-                        = (calcDir(x + h, y, z, nor, k) - 2.0f * calcDir(x, y, z, nor, k) + calcDir(x - h, y, z, nor, k))
+-                        / (4.0f * h * h);
+-                final float dirYY
+-                        = (calcDir(x, y + h, z, nor, k) - 2.0f * calcDir(x, y, z, nor, k) + calcDir(x, y - h, z, nor, k))
+-                        / (4.0f * h * h);
+-                final float dirZZ
+-                        = (calcDir(x, y, z + h, nor, k) - 2.0f * calcDir(x, y, z, nor, k) + calcDir(x, y, z - h, nor, k))
+-                        / (4.0f * h * h);
+-                final float dirYXX
+-                        = ((calcDir(x + h, y + h, z, nor, k) - 2.0f * calcDir(x, y + h, z, nor, k) + calcDir(x - h, y + h, z, nor, k))
+-                        - (calcDir(x + h, y - h, z, nor, k) - 2.0f * calcDir(x, y - h, z, nor, k) + calcDir(x - h, y - h, z, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirZXX
+-                        = ((calcDir(x + h, y, z + h, nor, k) - 2.0f * calcDir(x, y, z + h, nor, k) + calcDir(x - h, y, z + h, nor, k))
+-                        - (calcDir(x + h, y, z - h, nor, k) - 2.0f * calcDir(x, y, z - h, nor, k) + calcDir(x - h, y, z - h, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirXYY
+-                        = ((calcDir(x + h, y + h, z, nor, k) - 2.0f * calcDir(x + h, y, z, nor, k) + calcDir(x + h, y - h, z, nor, k))
+-                        - (calcDir(x - h, y + h, z, nor, k) - 2.0f * calcDir(x - h, y, z, nor, k) + calcDir(x - h, y - h, z, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirZYY
+-                        = ((calcDir(x, y + h, z + h, nor, k) - 2.0f * calcDir(x, y, z + h, nor, k) + calcDir(x, y - h, z + h, nor, k))
+-                        - (calcDir(x, y + h, z - h, nor, k) - 2.0f * calcDir(x, y, z - h, nor, k) + calcDir(x, y - h, z - h, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirXZZ
+-                        = ((calcDir(x + h, y, z + h, nor, k) - 2.0f * calcDir(x + h, y, z, nor, k) + calcDir(x + h, y, z - h, nor, k))
+-                        - (calcDir(x - h, y, z + h, nor, k) - 2.0f * calcDir(x - h, y, z, nor, k) + calcDir(x - h, y, z - h, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirYZZ
+-                        = ((calcDir(x, y + h, z + h, nor, k) - 2.0f * calcDir(x, y + h, z, nor, k) + calcDir(x, y + h, z - h, nor, k))
+-                        - (calcDir(x, y - h, z + h, nor, k) - 2.0f * calcDir(x, y - h, z, nor, k) + calcDir(x, y - h, z - h, nor, k)))
+-                        / (8.0f * h * h * h);
+-                final float dirXXX
+-                        = (calcDir(x + 2 * h, y, z, nor, k) - calcDir(x + h, y, z, nor, k)
+-                        + calcDir(x - h, y, z, nor, k) - calcDir(x - 2 * h, y, z, nor, k))
+-                        / (8.0f * h * h * h);
+-                final float dirYYY
+-                        = (calcDir(x, y + 2 * h, z, nor, k) - calcDir(x, y + h, z, nor, k)
+-                        + calcDir(x, y - h, z, nor, k) - calcDir(x, y - 2 * h, z, nor, k))
+-                        / (8.0f * h * h * h);
+-                final float dirZZZ
+-                        = (calcDir(x, y, z + 2 * h, nor, k) - calcDir(x, y, z + h, nor, k)
+-                        + calcDir(x, y, z - h, nor, k) - calcDir(x, y, z - 2 * h, nor, k))
+-                        / (8.0f * h * h * h);
+-                
+-                xxxka[i] = ka[i]*dirXXX + xxxka[i]*dir + 3*(xka[i]*dirXX + xxka[i]*dirX); 
+-                xxxkb[i] = kb[i]*dirXXX + xxxkb[i]*dir + 3*(xkb[i]*dirXX + xxkb[i]*dirX); 
+-                yyyka[i] = ka[i]*dirYYY + yyyka[i]*dir + 3*(yka[i]*dirYY + yyka[i]*dirY);
+-                yyykb[i] = kb[i]*dirYYY + yyykb[i]*dir + 3*(ykb[i]*dirYY + yykb[i]*dirY); 
+-                zzzka[i] = ka[i]*dirZZZ + xxxka[i]*dir + 3*(zka[i]*dirZZ + zzka[i]*dirZ);
+-                zzzkb[i] = kb[i]*dirZZZ + xxxkb[i]*dir + 3*(zkb[i]*dirZZ + zzkb[i]*dirZ); 
+-                
+-                yxxka[i] = ka[i]*dirYXX + yxxka[i]*dir + 3*(xka[i]*dirXX + xxka[i]*dirX); 
+-                yxxkb[i] = kb[i]*dirYXX + yxxkb[i]*dir + 3*(xkb[i]*dirXX + xxkb[i]*dirX); 
+-                zxxka[i] = ka[i]*dirZXX + zxxka[i]*dir + 3*(xka[i]*dirXX + xxka[i]*dirX); 
+-                zxxkb[i] = kb[i]*dirZXX + zxxkb[i]*dir + 3*(xkb[i]*dirXX + xxkb[i]*dirX);
+-                xyyka[i] = ka[i]*dirXYY + xyyka[i]*dir + 3*(yka[i]*dirYY + yyka[i]*dirY); 
+-                xyykb[i] = kb[i]*dirXYY + xyykb[i]*dir + 3*(ykb[i]*dirYY + yykb[i]*dirY);
+-                zyyka[i] = ka[i]*dirZYY + zyyka[i]*dir + 3*(yka[i]*dirYY + yyka[i]*dirY); 
+-                zyykb[i] = kb[i]*dirZYY + zyykb[i]*dir + 3*(ykb[i]*dirYY + yykb[i]*dirY);
+-                xzzka[i] = ka[i]*dirXZZ + xzzka[i]*dir + 3*(zka[i]*dirZZ + zzka[i]*dirZ); 
+-                xzzkb[i] = kb[i]*dirXZZ + xzzkb[i]*dir + 3*(zkb[i]*dirZZ + zzkb[i]*dirZ);
+-                yzzka[i] = ka[i]*dirYZZ + yzzka[i]*dir + 3*(zka[i]*dirZZ + zzka[i]*dirZ); 
+-                yzzkb[i] = kb[i]*dirYZZ + yzzkb[i]*dir + 3*(zkb[i]*dirZZ + zzkb[i]*dirZ);
+-                
+-                xxka[i] = ka[i]*dirXX + 2*xka[i]*dirX + xxka[i]*dir; 
+-                xxkb[i] = kb[i]*dirXX + 2*xkb[i]*dirX + xxkb[i]*dir;
+-                yyka[i] = ka[i]*dirYY + 2*yka[i]*dirY + yyka[i]*dir; 
+-                yykb[i] = kb[i]*dirYY + 2*ykb[i]*dirY + yykb[i]*dir;
+-                zzka[i] = ka[i]*dirZZ + 2*zka[i]*dirZ + zzka[i]*dir;
+-                zzkb[i] = kb[i]*dirZZ + 2*zkb[i]*dirZ + zzkb[i]*dir;
+-                xyka[i] = ka[i]*dirXY + 2*yka[i]*dirY + xyka[i]*dir; 
+-                xykb[i] = kb[i]*dirXY + 2*ykb[i]*dirY + xykb[i]*dir; 
+-                xzka[i] = ka[i]*dirXZ + 2*zka[i]*dirZ + xzka[i]*dir; 
+-                xzkb[i] = kb[i]*dirXZ + 2*zkb[i]*dirZ + xzkb[i]*dir;
+-                yzka[i] = ka[i]*dirYZ + 2*zka[i]*dirZ + yzka[i]*dir; 
+-                yzkb[i] = kb[i]*dirYZ + 2*zkb[i]*dirZ + yzkb[i]*dir;
+-
+-                xka[i] = ka[i]*dirX + xka[i]*dir; 
+-                xkb[i] = kb[i]*dirX + xkb[i]*dir;
+-                yka[i] = ka[i]*dirY + yka[i]*dir; 
+-                ykb[i] = kb[i]*dirY + ykb[i]*dir;
+-                zka[i] = ka[i]*dirZ + zka[i]*dir; 
+-                zkb[i] = kb[i]*dirZ + zkb[i]*dir;
+-                
+-                ka[i] *= dir; kb[i] *= dir;
+-            }
+-                        
+-        }
+-        
+-        if(isReflector){
+-            for(int i = 0; i < nTrans; ++i){
+-                ka[i] +=  ka[i + nTrans]; 
+-                kb[i] +=  kb[i + nTrans];
+-                
+-                xka[i] +=  xka[i + nTrans]; 
+-                xkb[i] +=  xkb[i + nTrans];
+-                yka[i] +=  yka[i + nTrans]; 
+-                ykb[i] +=  ykb[i + nTrans];
+-                zka[i] +=  zka[i + nTrans]; 
+-                zkb[i] +=  zkb[i + nTrans];
+-                
+-                xyka[i] +=  xyka[i + nTrans]; 
+-                xykb[i] +=  xykb[i + nTrans];
+-                xzka[i] +=  xzka[i + nTrans]; 
+-                xzkb[i] +=  xzkb[i + nTrans];
+-                yzka[i] +=  yzka[i + nTrans]; 
+-                yzkb[i] +=  yzkb[i + nTrans];
+-                xxka[i] +=  xxka[i + nTrans]; 
+-                xxkb[i] +=  xxkb[i + nTrans];
+-                yyka[i] +=  yyka[i + nTrans]; 
+-                yykb[i] +=  yykb[i + nTrans];
+-                zzka[i] +=  zzka[i + nTrans]; 
+-                zzkb[i] +=  zzkb[i + nTrans];
+-                
+-                yxxka[i] +=  yxxka[i + nTrans]; 
+-                yxxkb[i] +=  yxxkb[i + nTrans];
+-                zxxka[i] +=  zxxka[i + nTrans]; 
+-                zxxkb[i] +=  zxxkb[i + nTrans];
+-                xyyka[i] +=  xyyka[i + nTrans]; 
+-                xyykb[i] +=  xyykb[i + nTrans];
+-                zyyka[i] +=  zyyka[i + nTrans]; 
+-                zyykb[i] +=  zyykb[i + nTrans];
+-                xzzka[i] +=  xzzka[i + nTrans]; 
+-                xzzkb[i] +=  xzzkb[i + nTrans];
+-                yzzka[i] +=  yzzka[i + nTrans]; 
+-                yzzkb[i] +=  yzzkb[i + nTrans];
+-                xxxka[i] +=  xxxka[i + nTrans]; 
+-                xxxkb[i] +=  xxxkb[i + nTrans];
+-                yyyka[i] +=  yyyka[i + nTrans]; 
+-                yyykb[i] +=  yyykb[i + nTrans];
+-                zzzka[i] +=  zzzka[i + nTrans]; 
+-                zzzkb[i] +=  zzzkb[i + nTrans];
+-            }
+-        }
+-        
+-        
+-        
+-        K1 = M1 * 2.0f;
+-        K2 = M2 * 2.0f;
+     }
+ }
+--- a/src/acousticfield3d/algorithms/CalcField.java
++++ b/src/acousticfield3d/algorithms/CalcField.java
+@@ -24,73 +24,30 @@
+         final float ampDiscStep = 1.0f / mf.miscPanel.getAmpDiscretization();
+         final float phaseDiscStep = 1.0f / mf.miscPanel.getPhaseDiscretization();
+         
+-        final Vector3f nor = new Vector3f();
+-        final Vector3f tPos = new Vector3f();
+-        final Vector3f diffVec = new Vector3f();
+-        
+         final Vector2f field = new Vector2f();
+-       
+-        final float mSpeed = mf.simForm.getMediumSpeed();
+-        
+-        for(Transducer t : mf.simulation.transducers){
+-
+-            tPos.set( t.getTransform().getTranslation() );
+-            t.getTransform().getRotation().mult( Vector3f.UNIT_Y, nor);
+-            diffVec.set(px, py, pz).subtractLocal(tPos);
+-            final float dist = diffVec.length();
+-            final float nn = nor.length();
+-            diffVec.divideLocal( dist );
+-          
+-            float angle = M.acos(diffVec.dot(nor) / nn);
+-
+-            final float ap = t.getApperture();
+-            final float omega = M.TWO_PI * t.getFrequency();      // angular frequency
+-            final float k = omega / mSpeed;        // wavenumber
+-            float dum =  ap * 0.5f * k * M.sin( angle );
+-            float directivity = M.sinc(dum);
+-                     
+-            float ampDirAtt = t.calcRealDiscAmplitude(discAmp, ampDiscStep ) * directivity / dist;
+-            float kdPlusPhase = k * dist + t.calcRealDiscPhase(discPhase, phaseDiscStep);
+-            field.x += ampDirAtt * M.cos(kdPlusPhase);
+-            field.y += ampDirAtt * M.sin(kdPlusPhase);
++        final double[] transfer = new double[2];
++        double real = 0, imag = 0;
++        for (Transducer t : mf.simulation.transducers) {
++            double amplitude = t.calcRealDiscAmplitude(discAmp, ampDiscStep);
++            if (amplitude == 0) continue;
++            AcousticPropagation.transfer(t, mf.simulation, px, py, pz, transfer);
++            double phase = t.calcRealDiscPhase(discPhase, phaseDiscStep);
++            double c = Math.cos(phase), sn = Math.sin(phase);
++            real += amplitude * (transfer[0]*c - transfer[1]*sn);
++            imag += amplitude * (transfer[0]*sn + transfer[1]*c);
+         }
+-        
++        field.set((float)real, (float)imag);
+         return field;
+     }
+-    
+-    public static Vector2f calcFieldForTrans(final Transducer t, final float phase, final float px, final float py, final float pz, final Simulation s){
+-        final Vector3f nor = new Vector3f();
+-        final Vector3f tPos = new Vector3f();
+-        final Vector3f diffVec = new Vector3f();
+-        
+-        final Vector2f field = new Vector2f();
+-       
+-        final float mSpeed = s.getMediumSpeed();
+-        
+-        tPos.set(t.getTransform().getTranslation());
+-        t.getTransform().getRotation().mult(Vector3f.UNIT_Y, nor);
+-        diffVec.set(px, py, pz).subtractLocal(tPos);
+-        final float dist = diffVec.length();
+-        final float nn = nor.length();
+-        diffVec.divideLocal(dist);
+ 
+-        float angle = M.acos(diffVec.dot(nor) / nn);
++    public static Vector2f calcFieldForTrans(final Transducer t, final float phase,
++            final float px, final float py, final float pz, final Simulation s) {
++        double[] v = new double[2];
++        AcousticPropagation.transfer(t, s, px, py, pz, v);
++        double c = Math.cos(phase), sn = Math.sin(phase);
++        return new Vector2f((float)(v[0]*c-v[1]*sn), (float)(v[0]*sn+v[1]*c));
++    }
+ 
+-        final float ap = t.getApperture();
+-        final float omega = M.TWO_PI * t.getFrequency();      // angular frequency
+-        final float k = omega / mSpeed;        // wavenumber
+-        float dum = ap * 0.5f * k * M.sin(angle);
+-        float directivity = M.sinc(dum);
+-
+-        float ampDirAtt = 1 * directivity / dist;
+-        float kdPlusPhase = k * dist + phase;
+-        field.x = ampDirAtt * M.cos(kdPlusPhase);
+-        field.y = ampDirAtt * M.sin(kdPlusPhase);
+-    
+-        return field;
+-    }
+-    
+-    
+     public static double calcFieldGradientDot(final float x, final float y, final float z,
+             final float dx,final float dy,final float dz,
+             final float h, final MainForm mf){
+--- a/src/acousticfield3d/algorithms/DivTransFocus.java
++++ b/src/acousticfield3d/algorithms/DivTransFocus.java
+@@ -60,7 +60,7 @@
+            subDivideClosest(subsets, orderedTrans,controlPoints);
+        }
+ 
+-       focus(subsets,controlPoints, mf.simulation.getMediumSpeed());
++       focus(subsets,controlPoints, mf.simulation);
+     }
+     
+     private static void subDivideChecker(final ArrayList<ArrayList<Transducer>> subsets, final ArrayList<Transducer> trans){
+@@ -128,10 +128,10 @@
+     }
+     
+  
+-    private static void focus(final ArrayList<ArrayList<Transducer>> subsets, final List<? extends Entity> controlPoints, final float mSpeed){
++    private static void focus(final ArrayList<ArrayList<Transducer>> subsets, final List<? extends Entity> controlPoints, final acousticfield3d.simulation.Simulation simulation){
+         final int n = M.min(subsets.size(), controlPoints.size());
+         for (int i = 0; i < n; ++i){
+-            SimplePhaseAlgorithms.focus(subsets.get(i), controlPoints.get(i).getTransform().getTranslation(), mSpeed);
++            SimplePhaseAlgorithms.focus(subsets.get(i), controlPoints.get(i).getTransform().getTranslation(), simulation);
+         }
+         
+     }
+--- a/src/acousticfield3d/algorithms/PropagationDerivatives.java
++++ b/src/acousticfield3d/algorithms/PropagationDerivatives.java
+@@ -0,0 +1,45 @@
++package acousticfield3d.algorithms;
++
++import acousticfield3d.simulation.ReflectorSettings;
++
++/** Double-precision, centered seven-point stencils; orders 0..3, including mixed derivatives. */
++public final class PropagationDerivatives {
++    private PropagationDerivatives() {}
++    public static final int[][] ORDERS = {
++        {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1},
++        {1,1,0}, {1,0,1}, {0,1,1}, {2,0,0}, {0,2,0}, {0,0,2},
++        {3,0,0}, {0,3,0}, {0,0,3}, {1,2,0}, {1,0,2},
++        {2,1,0}, {0,1,2}, {2,0,1}, {0,2,1}
++    };
++    private static final double[][] W = {
++        {0,0,0,1,0,0,0},
++        {-1.0/60,3.0/20,-3.0/4,0,3.0/4,-3.0/20,1.0/60},
++        {1.0/90,-3.0/20,3.0/2,-49.0/18,3.0/2,-3.0/20,1.0/90},
++        {1.0/8,-1,13.0/8,0,-13.0/8,1,-1.0/8}
++    };
++
++    public static double[][] evaluate(AcousticPropagation.Source source, ReflectorSettings reflector,
++            double x, double y, double z, double h, boolean directivity) {
++        if (!(h > 0) || !Double.isFinite(h)) throw new IllegalArgumentException("Derivative step must be positive");
++        double[][] result = new double[ORDERS.length][2];
++        double[][] samples = new double[343][2];
++        for (int ix=0; ix<7; ix++) for (int iy=0; iy<7; iy++) for (int iz=0; iz<7; iz++) {
++            // No requested derivative uses all three nonzero offsets.
++            if (ix != 3 && iy != 3 && iz != 3) continue;
++            AcousticPropagation.transfer(source, reflector, x+(ix-3)*h, y+(iy-3)*h,
++                    z+(iz-3)*h, directivity, samples[(ix*7+iy)*7+iz]);
++        }
++        for (int d=0; d<ORDERS.length; d++) {
++            int[] o = ORDERS[d];
++            for (int ix=0; ix<7; ix++) for (int iy=0; iy<7; iy++) for (int iz=0; iz<7; iz++) {
++                double weight = W[o[0]][ix] * W[o[1]][iy] * W[o[2]][iz];
++                if (weight == 0) continue;
++                double[] v = samples[(ix*7+iy)*7+iz];
++                result[d][0] += weight * v[0]; result[d][1] += weight * v[1];
++            }
++            double scale = Math.pow(h, o[0]+o[1]+o[2]);
++            result[d][0] /= scale; result[d][1] /= scale;
++        }
++        return result;
++    }
++}
+--- a/src/acousticfield3d/algorithms/SimplePhaseAlgorithms.java
++++ b/src/acousticfield3d/algorithms/SimplePhaseAlgorithms.java
+@@ -12,6 +12,21 @@
+  * @author Asier
+  */
+ public class SimplePhaseAlgorithms {
++    public static void focus(final List<Transducer> trans, final Vector3f target,
++            final acousticfield3d.simulation.Simulation simulation) {
++        if (!simulation.getReflector().isEnabled()) {
++            focus(trans, target, simulation.getMediumSpeed());
++            return;
++        }
++        double[] transfer = new double[2];
++        for (Transducer t : trans) {
++            if (t.getAmplitude() == 0) continue;
++            AcousticPropagation.transfer(t, simulation, target.x, target.y, target.z, transfer);
++            if (Math.hypot(transfer[0], transfer[1]) > 1e-15)
++                t.setPhase((float)(-Math.atan2(transfer[1], transfer[0]) / Math.PI));
++        }
++    }
++
+   
+     public static void focus(final Transducer t, final Vector3f target, float speedOfSound){
+             final float distance = target.distance( t.getTransform().getTranslation() );
+--- a/src/acousticfield3d/algorithms/SliceCalculation.java
++++ b/src/acousticfield3d/algorithms/SliceCalculation.java
+@@ -20,6 +20,11 @@
+     final double[] phasesA;
+     final double[] phasesB;
+     
++    private String reflectorStamp = "";
++    private static String stamp(Simulation s) {
++        acousticfield3d.simulation.ReflectorSettings r=s.getReflector();
++        return r.isEnabled()+":"+r.getPlaneY()+":"+r.getMagnitude()+":"+r.getPhaseDegrees();
++    }
+     float sx,sy,sz,sw,sh; //position and dimensions fo the slice
+     
+     public SliceCalculation(int nTrans, int n, int m) {
+@@ -36,6 +41,7 @@
+     }
+    
+     public void initSliceXZ(final Simulation s, Vector3f slicePosition, float width, float height){
++        reflectorStamp=stamp(s);
+         final int minTrans = M.min(nTrans, s.transducers.size());
+         
+         sx = slicePosition.x;
+@@ -68,11 +74,12 @@
+     
+     
+     public void calcAmp(final Simulation s){
++        if (!reflectorStamp.equals(stamp(s))) initSliceXZ(s,new Vector3f(sx,sy,sz),sw,sh);
+         final int trans = M.min(nTrans, s.transducers.size());
+         for (int it = 0; it < trans; it++) {
+             final float angle = s.transducers.get(it).getPhase() * M.PI;
+-            phasesA[it] = M.cos(angle);
+-            phasesB[it] = M.sin(angle);
++            phasesA[it] = M.cos(angle) * s.transducers.get(it).calcRealDiscAmplitude(false,1);
++            phasesB[it] = M.sin(angle) * s.transducers.get(it).calcRealDiscAmplitude(false,1);
+         }
+         
+         for (int in = 0; in < n; in++) {
+--- a/src/acousticfield3d/gui/MainForm.java
++++ b/src/acousticfield3d/gui/MainForm.java
+@@ -103,6 +103,7 @@
+     public final MovePanel movePanel;
+     public final TrapsPanel trapsPanel;
+     public final VolumetricPanel volPanel;
++    public final acousticfield3d.gui.panels.ReflectorPanel reflectorPanel;
+     
+     public final HoloPatternsForm holoPatternsForm;
+     public final AddTransducersForm addTransducersForm;
+@@ -132,6 +133,7 @@
+         movePanel = new MovePanel(this);
+         trapsPanel = new TrapsPanel(this);
+         volPanel = new VolumetricPanel(this);
++        reflectorPanel = new acousticfield3d.gui.panels.ReflectorPanel(this);
+         
+         holoPatternsForm = new HoloPatternsForm(this);
+         simForm = new SimulationConfigForm(this);
+@@ -175,6 +177,7 @@
+         mainTabPanel.addTab("Move", movePanel);
+         mainTabPanel.addTab("Traps", trapsPanel);
+         mainTabPanel.addTab("Vol", volPanel);
++        mainTabPanel.addTab("Reflector", reflectorPanel);
+         
+         initSimulation();
+         
+@@ -195,6 +198,7 @@
+     }
+     
+     public void initSimulation(){
++        reflectorPanel.reloadFromSimulation();
+         animPanel.initSimulation();
+         
+         //read the simulation constants
+--- a/src/acousticfield3d/gui/misc/AlgorithmsForm.java
++++ b/src/acousticfield3d/gui/misc/AlgorithmsForm.java
+@@ -164,8 +164,7 @@
+                         //only one particle --> simple focal
+                         if (bfgs.controlPoints.size() == 1) {
+                             SimplePhaseAlgorithms.focus(mf.simulation.transducers,
+-                                    bfgs.controlPoints.get(0).getTransform().getTranslation(),
+-                                    mf.simulation.getMediumSpeed());
++                                    bfgs.controlPoints.get(0).getTransform().getTranslation(), mf.simulation);
+                         } else { //more particles -> use BFGS with pressure
+                             if (reusePre){ //apply the precalc phases
+                                 applyPhases(); 
+--- a/src/acousticfield3d/gui/misc/ForcePlotsFrame.java
++++ b/src/acousticfield3d/gui/misc/ForcePlotsFrame.java
+@@ -208,7 +208,7 @@
+         for(int i = 0; i < nSteps; ++i){
+            pos.addLocalInc(dir, disp/nSteps);
+             
+-           SimplePhaseAlgorithms.focus(mf.simulation.transducers, pos, mf.simulation.getMediumSpeed());
++           SimplePhaseAlgorithms.focus(mf.simulation.transducers, pos, mf.simulation);
+             //mf.algForm.runBFGS(false, false, true);
+            final double pressure = CalcField.calcFieldAt(pos.x, pos.y, pos.z, mf).length();
+           
+--- a/src/acousticfield3d/gui/misc/RandPointsExpFrame.java
++++ b/src/acousticfield3d/gui/misc/RandPointsExpFrame.java
+@@ -702,7 +702,7 @@
+                 //focus at the point
+                 final float[] p = pointsToUse[i][0];
+                 final Vector3f point = new Vector3f(p[0], p[1], p[2]);
+-                SimplePhaseAlgorithms.focus(mf.simulation.transducers, point, mf.simulation.getMediumSpeed());
++                SimplePhaseAlgorithms.focus(mf.simulation.transducers, point, mf.simulation);
+                 //get the amplitude
+                 final float amplitude = CalcField.calcFieldAt(point, mf).length();
+                 
+@@ -812,7 +812,7 @@
+             System.out.print(nTrans + ",");
+             final Vector3f avgP = Scene.calcCenter( mf.simulation.controlPoints );
+             
+-            //SimplePhaseAlgorithms.focus(mf.simulation.getTransducers(), avgP, mf.simulation.getMediumSpeed());
++            //SimplePhaseAlgorithms.focus(mf.simulation.getTransducers(), avgP, mf.simulation);
+             //SimplePhaseAlgorithms.addTwinSignature(mf.simulation.getTransducers(), M.HALF_PI);
+             
+             for(int i = 0; i < nPoints; ++i){
+--- a/src/acousticfield3d/gui/panels/MiscPanel.form
++++ b/src/acousticfield3d/gui/panels/MiscPanel.form
+@@ -256,7 +256,7 @@
+     </Component>
+     <Component class="javax.swing.JTextField" name="hDivText">
+       <Properties>
+-        <Property name="text" type="java.lang.String" value="5"/>
++        <Property name="text" type="java.lang.String" value="64"/>
+         <Property name="toolTipText" type="java.lang.String" value="distance between points for stencil approximations wavelength/thisNumber"/>
+       </Properties>
+     </Component>
+--- a/src/acousticfield3d/gui/panels/MiscPanel.java
++++ b/src/acousticfield3d/gui/panels/MiscPanel.java
+@@ -203,7 +203,7 @@
+ 
+         jLabel2.setText("hdiv:");
+ 
+-        hDivText.setText("5");
++        hDivText.setText("64");
+         hDivText.setToolTipText("distance between points for stencil approximations wavelength/thisNumber");
+ 
+         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(this);
+--- a/src/acousticfield3d/gui/panels/ReflectorPanel.java
++++ b/src/acousticfield3d/gui/panels/ReflectorPanel.java
+@@ -0,0 +1,137 @@
++package acousticfield3d.gui.panels;
++
++import acousticfield3d.algorithms.SimplePhaseAlgorithms;
++import acousticfield3d.gui.MainForm;
++import acousticfield3d.math.Vector3f;
++import acousticfield3d.scene.Entity;
++import acousticfield3d.scene.MeshEntity;
++import acousticfield3d.simulation.ReflectorSettings;
++import acousticfield3d.simulation.Transducer;
++import java.awt.BorderLayout;
++import java.awt.GridLayout;
++import java.text.ParseException;
++import java.util.Locale;
++import javax.swing.*;
++
++/** Programmatic panel; independent of NetBeans-generated form blocks. */
++public class ReflectorPanel extends JPanel {
++    private final MainForm mf;
++    private final JCheckBox enabled = new JCheckBox("Enable reflection");
++    private final JCheckBox visible = new JCheckBox("Show plate", true);
++    private final JSpinner planeY = spinner(-40, -2000, 2000, 0.1);
++    private final JSpinner gap = spinner(40, 0.1, 2000, 0.1);
++    private final JSpinner magnitude = spinner(1, 0, 1, 0.01);
++    private final JSpinner phase = spinner(0, -360, 360, 1);
++    private final JSpinner width = spinner(180, 1, 4000, 1);
++    private final JSpinner depth = spinner(180, 1, 4000, 1);
++    private final JTextArea status = new JTextArea(7, 22);
++    private boolean loading;
++
++    public ReflectorPanel(MainForm mf) {
++        this.mf = mf;
++        setLayout(new BorderLayout(4, 4));
++        JPanel rows = new JPanel(new GridLayout(0, 2, 3, 5));
++        rows.add(enabled); rows.add(visible);
++        row(rows, "Plane Y (mm)", planeY); row(rows, "Gap from array (mm)", gap);
++        JButton below = new JButton("Place below (-Y)"), above = new JButton("Place above (+Y)");
++        rows.add(below); rows.add(above);
++        row(rows, "Pressure |R|", magnitude); row(rows, "Reflection phase (deg)", phase);
++        row(rows, "Visual width X (mm)", width); row(rows, "Visual depth Z (mm)", depth);
++        JButton apply = new JButton("Apply / refresh"), slice = new JButton("Add XY slice");
++        rows.add(apply); rows.add(slice);
++        JButton focus = new JButton("Focus selected point (pressure)");
++        JPanel top = new JPanel(new BorderLayout(4, 6));
++        top.add(rows, BorderLayout.NORTH); top.add(focus, BorderLayout.SOUTH);
++        status.setEditable(false); status.setLineWrap(true); status.setWrapStyleWord(true); status.setOpaque(false);
++        add(top, BorderLayout.NORTH); add(status, BorderLayout.CENTER);
++        enabled.addActionListener(e -> applySettings()); visible.addActionListener(e -> applySettings());
++        for (JSpinner sp : new JSpinner[]{planeY, magnitude, phase, width, depth})
++            sp.addChangeListener(e -> { if (!loading) applySettings(); });
++        apply.addActionListener(e -> applySettings());
++        below.addActionListener(e -> place(-1)); above.addActionListener(e -> place(1));
++        slice.addActionListener(e -> addSlice()); focus.addActionListener(e -> focusPoint());
++        reloadFromSimulation();
++    }
++    private static JSpinner spinner(double value, double min, double max, double step) {
++        JSpinner s = new JSpinner(new SpinnerNumberModel(value, min, max, step));
++        s.setEditor(new JSpinner.NumberEditor(s, "0.###")); return s;
++    }
++    private static void row(JPanel p, String label, JComponent field) { p.add(new JLabel(label)); p.add(field); }
++    private static double value(JSpinner s) { return ((Number)s.getValue()).doubleValue(); }
++    public void reloadFromSimulation() {
++        loading = true;
++        ReflectorSettings r = mf.simulation.getReflector();
++        enabled.setSelected(r.isEnabled()); visible.setSelected(r.isVisible());
++        planeY.setValue(r.getPlaneY()*1000); magnitude.setValue(r.getMagnitude());
++        phase.setValue(r.getPhaseDegrees()); width.setValue(r.getVisualWidth()*1000); depth.setValue(r.getVisualDepth()*1000);
++        loading = false; updateStatus();
++    }
++    private boolean applySettings() {
++        if (loading) return false;
++        try {
++            loading = true;
++            for (JSpinner sp : new JSpinner[]{planeY, magnitude, phase, width, depth}) sp.commitEdit();
++            ReflectorSettings r = new ReflectorSettings();
++            r.setEnabled(enabled.isSelected()); r.setVisible(visible.isSelected());
++            r.setPlaneY(value(planeY)/1000); r.setMagnitude(value(magnitude)); r.setPhaseDegrees(value(phase));
++            r.setVisualWidth(value(width)/1000); r.setVisualDepth(value(depth)/1000);
++            synchronized (mf) { mf.simulation.setReflector(r); }
++            mf.needUpdate(); updateStatus(); return true;
++        } catch (ParseException | IllegalArgumentException ex) {
++            JOptionPane.showMessageDialog(this, ex.getMessage(), "Invalid reflector setting", JOptionPane.ERROR_MESSAGE);
++            return false;
++        } finally { loading = false; }
++    }
++    private double arrayY() {
++        double sum = 0; int count = 0;
++        for (Transducer t : mf.simulation.transducers) if (t.getAmplitude() != 0) {
++            sum += t.getTransform().getTranslation().y; count++;
++        }
++        return count == 0 ? 0 : sum/count;
++    }
++    private void place(int sign) {
++        try { gap.commitEdit(); } catch (ParseException ex) { return; }
++        if (mf.simulation.transducers.isEmpty()) { JOptionPane.showMessageDialog(this, "Load your array first."); return; }
++        planeY.setValue(arrayY()*1000 + sign*value(gap)); applySettings();
++    }
++    private void updateStatus() {
++        ReflectorSettings r = mf.simulation.getReflector();
++        String caution = "";
++        double min = Double.POSITIVE_INFINITY, max = Double.NEGATIVE_INFINITY;
++        for (Transducer t : mf.simulation.transducers) if (t.getAmplitude() != 0) {
++            double y = t.getTransform().getTranslation().y; min=Math.min(min,y); max=Math.max(max,y);
++        }
++        if (r.isEnabled() && r.getPlaneY() >= min && r.getPlaneY() <= max)
++            caution = "\nWARNING: plane intersects the active array. Move it outside the array.";
++        status.setText(String.format(Locale.US,
++            "%s | Array mean Y: %.2f mm\nActual Y gap: %.2f mm\nInfinite flat plane; width/depth affect appearance only.\n"
++            + "Use fields on the array side of the plate.\nHeight changes the field, but does not re-optimize phases automatically.%s",
++            r.isEnabled()?"Reflection ON":"Reflection OFF", arrayY()*1000, Math.abs(r.getPlaneY()-arrayY())*1000, caution));
++    }
++    private void focusPoint() {
++        if (!applySettings()) return;
++        Entity target = null; int count = 0;
++        for (Entity e : mf.selection) if ((e.getTag() & Entity.TAG_CONTROL_POINT) != 0) { target=e; count++; }
++        if (count != 1) { JOptionPane.showMessageDialog(this, "Select exactly one control point in the scene."); return; }
++        synchronized (mf) {
++            SimplePhaseAlgorithms.focus(mf.simulation.transducers, target.getTransform().getTranslation(), mf.simulation);
++        }
++        mf.needUpdate();
++    }
++    private void addSlice() {
++        if (!applySettings()) return;
++        Vector3f center = new Vector3f(); int n = 0;
++        for (Transducer t : mf.simulation.transducers) if (t.getAmplitude() != 0) { center.addLocal(t.getTransform().getTranslation()); n++; }
++        if (n == 0) { JOptionPane.showMessageDialog(this, "Load an array with active channels first."); return; }
++        center.divideLocal(n);
++        ReflectorSettings r = mf.simulation.getReflector();
++        float height = (float)Math.abs(center.y-r.getPlaneY());
++        center.y = (float)((center.y+r.getPlaneY())/2);
++        MeshEntity slice = mf.rtSlicePanel.createSlice();
++        slice.getTransform().getTranslation().set(center);
++        slice.getTransform().getRotation().set(0,0,0,1);
++        slice.getTransform().getScale().set((float)r.getVisualWidth(), Math.max(height,0.001f),1);
++        synchronized (mf) { mf.scene.getEntities().add(slice); }
++        mf.needUpdate();
++    }
++}
+--- a/src/acousticfield3d/renderer/Renderer.java
++++ b/src/acousticfield3d/renderer/Renderer.java
+@@ -26,6 +26,7 @@
+     private final Scene scene;
+     private final MainForm form;
+     
++    private MeshEntity reflectorMesh;
+     private boolean cullFace;
+     private boolean depthTest;
+     private boolean blend;
+@@ -99,6 +100,7 @@
+  
+         Simulation simulation = form.getSimulation();
+         updateTransducersBuffers(simulation);
++        updateReflectorMesh(simulation);
+         
+         //check if the shaders using transducers have been compiled with the current number of transducers
+         if( nTransducers > 0 ){
+@@ -116,6 +118,26 @@
+         }
+     }
+ 
++
++    private void updateReflectorMesh(Simulation simulation) {
++        synchronized (form) {
++            if (reflectorMesh == null) {
++                reflectorMesh = new MeshEntity(Resources.MESH_BOX, null, Resources.SHADER_SOLID_SPEC);
++                reflectorMesh.setTag(Entity.TAG_REFLECTOR);
++                reflectorMesh.setColor(acousticfield3d.utils.Color.create(90, 180, 210, 100));
++            }
++            if (!scene.getEntities().contains(reflectorMesh)) scene.getEntities().add(reflectorMesh);
++            acousticfield3d.simulation.ReflectorSettings r = simulation.getReflector();
++            reflectorMesh.setVisible(r.isEnabled() && r.isVisible());
++            float x=0, z=0; int count=0;
++            for (Transducer t : simulation.transducers) if (t.getAmplitude() != 0) {
++                x += t.getTransform().getTranslation().x; z += t.getTransform().getTranslation().z; count++;
++            }
++            if (count > 0) { x/=count; z/=count; }
++            reflectorMesh.getTransform().getTranslation().set(x, (float)r.getPlaneY(), z);
++            reflectorMesh.getTransform().getScale().set((float)r.getVisualWidth(), 0.0003f, (float)r.getVisualDepth());
++        }
++    }
+ 
+     public void updateTransducersBuffers(Simulation simulation) {
+         //transducers data
+@@ -148,7 +170,7 @@
+         // k amp phase w -> specs
+         
+         Vector3f transNormal = new Vector3f();
+-        final float mSpeed = form.simForm.getMediumSpeed();
++        final float mSpeed = simulation.getMediumSpeed();
+         
+         final boolean discAmp = form.miscPanel.isAmpDiscretizer();
+         final boolean discPhase = form.miscPanel.isPhaseDiscretizer();
+--- a/src/acousticfield3d/renderer/ShaderTransducers.java
++++ b/src/acousticfield3d/renderer/ShaderTransducers.java
+@@ -19,6 +19,7 @@
+     int transPosition;
+     int transNormal;
+     int transSpecs;
++    int reflectorEnabled, reflectorY, reflectorMagnitude, reflectorPhase;
+     
+     public ShaderTransducers(String vProgram, String fProgram, int renderingOrder, int numberOfTransducers) {
+         super(vProgram, fProgram, renderingOrder);
+@@ -47,6 +48,10 @@
+         transPosition = gl.glGetUniformLocation(shaderProgramID, "tPos");
+         transNormal = gl.glGetUniformLocation(shaderProgramID, "tNorm");
+         transSpecs = gl.glGetUniformLocation(shaderProgramID, "tSpecs");
++        reflectorEnabled = gl.glGetUniformLocation(shaderProgramID, "reflectorEnabled");
++        reflectorY = gl.glGetUniformLocation(shaderProgramID, "reflectorY");
++        reflectorMagnitude = gl.glGetUniformLocation(shaderProgramID, "reflectorMagnitude");
++        reflectorPhase = gl.glGetUniformLocation(shaderProgramID, "reflectorPhase");
+     }
+ 
+     @Override
+@@ -61,6 +66,11 @@
+             Matrix4f projectionViewModel, Matrix4f projectionView, Matrix4f viewModel, Matrix4f model, FloatBuffer fb) {
+         super.bindUniforms(gl, scene, renderer, s, me, projectionViewModel, projectionView, viewModel, model, fb);
+         
++        acousticfield3d.simulation.ReflectorSettings settings = s.getReflector();
++        gl.glUniform1i(reflectorEnabled, settings.isEnabled() ? 1 : 0);
++        gl.glUniform1f(reflectorY, (float)settings.getPlaneY());
++        gl.glUniform1f(reflectorMagnitude, (float)settings.getMagnitude());
++        gl.glUniform1f(reflectorPhase, (float)Math.toRadians(settings.getPhaseDegrees()));
+         gl.glUniform3fv(transPosition, renderer.nTransducers, renderer.positions);
+         gl.glUniform3fv(transNormal, renderer.nTransducers, renderer.normals);
+         gl.glUniform4fv(transSpecs, renderer.nTransducers, renderer.specs);
+--- a/src/acousticfield3d/resources/FieldCalcsStencil.glsl
++++ b/src/acousticfield3d/resources/FieldCalcsStencil.glsl
+@@ -1,27 +1,30 @@
+ //FOR INCLUDING
+-vec2 fieldAt(vec3 point){
++uniform int reflectorEnabled;
++uniform float reflectorY;
++uniform float reflectorMagnitude;
++uniform float reflectorPhase;
++vec2 sourceField(vec3 point, vec3 source, vec3 normal, vec4 spec) {
++    vec3 delta = point - source;
++    float distance = max(length(delta), 1.0e-9);
++    float cosine = clamp(dot(delta, normalize(normal)) / distance, -1.0, 1.0);
++    float q = 0.5 * spec.x * spec.w * sqrt(max(0.0, 1.0 - cosine*cosine));
++    float directivity = 1.0;
++    if (abs(q) > 1.0e-6) directivity = sin(q) / q;
++    float angle = spec.x * distance + spec.z;
++    return (spec.y * directivity / distance) * vec2(cos(angle), sin(angle));
++}
++vec2 fieldAt(vec3 point) {
+     vec2 field = vec2(0.0);
+-
+-    for(int i = 0; i < N_TRANS; ++i){ //try loop unroll
+-        vec3 diffVec = point - tPos[i];
+-        
+-        float dist = length(diffVec);
+-
+-        float angle = acos( dot(diffVec, tNorm[i]) / dist);
+-
+-        float dum = tSpecs[i].x * 0.5 * tSpecs[i].w * sin( angle );
+-        float directivity;
+-        if(dum == 0.0){
+-            directivity = 1.0;
+-        }else{
+-            directivity = sin(dum) / dum;
++    for (int i = 0; i < N_TRANS; ++i) {
++        field += sourceField(point, tPos[i], tNorm[i], tSpecs[i]);
++        if (reflectorEnabled != 0 && reflectorMagnitude > 0.0) {
++            vec3 imagePosition = vec3(tPos[i].x, 2.0*reflectorY - tPos[i].y, tPos[i].z);
++            vec3 imageNormal = vec3(tNorm[i].x, -tNorm[i].y, tNorm[i].z);
++            vec4 imageSpec = tSpecs[i];
++            imageSpec.y *= reflectorMagnitude;
++            imageSpec.z += reflectorPhase;
++            field += sourceField(point, imagePosition, imageNormal, imageSpec);
+         }
+-
+-        float ampDirAtt = tSpecs[i].y * directivity / dist;
+-        float kdPlusPhase = tSpecs[i].x * dist + tSpecs[i].z;
+-        field.x += ampDirAtt * cos(kdPlusPhase);
+-        field.y += ampDirAtt * sin(kdPlusPhase);
+     }
+-
+     return field;
+ }
+--- a/src/acousticfield3d/resources/Volumetric_F.glsl
++++ b/src/acousticfield3d/resources/Volumetric_F.glsl
+@@ -34,7 +34,7 @@
+ #define PI 3.1415926535897932384626433832795
+ 
+ //FieldCalcsStencil.glsl
+-//INCLUDE FieldCalcsStencilNoDir.glsl
++//INCLUDE FieldCalcsStencil.glsl
+ //INCLUDE Colouring.glsl
+ 
+ float val(vec2 p){
+--- a/src/acousticfield3d/scene/Entity.java
++++ b/src/acousticfield3d/scene/Entity.java
+@@ -13,6 +13,7 @@
+  * @author Asier
+  */
+ public class Entity {
++    public static final int TAG_REFLECTOR = 1<<12;
+     public static final int TAG_NONE = 1<<0;
+     public static final int TAG_TRANSDUCER = 1<<1;
+     public static final int TAG_CONTROL_POINT = 1<<2;
+--- a/src/acousticfield3d/scene/Resources.java
++++ b/src/acousticfield3d/scene/Resources.java
+@@ -87,7 +87,7 @@
+         shaders.put(SHADER_SLICE_RT_AMP, new SliceRTShader("SliceRT_V.glsl", "SliceRT_F.glsl", FieldSource.sourceAmp).init(gl, templates));
+         shaders.put(SHADER_SLICE_RT_PHASE, new SliceRTShader("SliceRT_V.glsl", "SliceRT_F.glsl", FieldSource.sourcePhase).init(gl, templates));
+         shaders.put(SHADER_SLICE_RT_AMPPHASE, new SliceRTShader("SliceRT_V.glsl", "SliceRT_F.glsl", FieldSource.sourceAmpPhase).init(gl, templates));
+-        shaders.put(SHADER_SLICE_RT_QUICK_AMP, new SliceRTQuickAmpShader("SliceRT_V.glsl", "SliceRTQuickAmp_F.glsl").init(gl, templates));
++        shaders.put(SHADER_SLICE_RT_QUICK_AMP, new SliceRTShader("SliceRT_V.glsl", "SliceRT_F.glsl", FieldSource.sourceAmp).init(gl, templates));
+         shaders.put(SHADER_VOLUMETRIC, new VolumetricShader("Volumetric_V.glsl", "Volumetric_F.glsl").init(gl, templates));
+        
+         //load meshes
+--- a/src/acousticfield3d/simulation/ReflectorSettings.java
++++ b/src/acousticfield3d/simulation/ReflectorSettings.java
+@@ -0,0 +1,38 @@
++package acousticfield3d.simulation;
++
++/** JavaBean persisted inside the simulation XML. SI units except phase in degrees. */
++public class ReflectorSettings {
++    private boolean enabled;
++    private boolean visible = true;
++    private double planeY = -0.040;
++    private double magnitude = 1.0;
++    private double phaseDegrees;
++    private double visualWidth = 0.180;
++    private double visualDepth = 0.180;
++
++    public boolean isEnabled() { return enabled; }
++    public void setEnabled(boolean v) { enabled = v; }
++    public boolean isVisible() { return visible; }
++    public void setVisible(boolean v) { visible = v; }
++    public double getPlaneY() { return planeY; }
++    public void setPlaneY(double v) { finite(v); planeY = v; }
++    public double getMagnitude() { return magnitude; }
++    public void setMagnitude(double v) {
++        finite(v);
++        if (v < 0 || v > 1) throw new IllegalArgumentException("Pressure |R| must be in [0, 1]");
++        magnitude = v;
++    }
++    public double getPhaseDegrees() { return phaseDegrees; }
++    public void setPhaseDegrees(double v) { finite(v); phaseDegrees = v; }
++    public double getVisualWidth() { return visualWidth; }
++    public void setVisualWidth(double v) { positive(v); visualWidth = v; }
++    public double getVisualDepth() { return visualDepth; }
++    public void setVisualDepth(double v) { positive(v); visualDepth = v; }
++    private static void finite(double v) {
++        if (!Double.isFinite(v)) throw new IllegalArgumentException("A finite number is required");
++    }
++    private static void positive(double v) {
++        finite(v);
++        if (v <= 0) throw new IllegalArgumentException("Size must be positive");
++    }
++}
+--- a/src/acousticfield3d/simulation/Simulation.java
++++ b/src/acousticfield3d/simulation/Simulation.java
+@@ -19,6 +19,12 @@
+  * @author Asier
+  */
+ public class Simulation {
++    private volatile ReflectorSettings reflector = new ReflectorSettings();
++    public ReflectorSettings getReflector() { return reflector; }
++    public void setReflector(ReflectorSettings value) {
++        reflector = value == null ? new ReflectorSettings() : value;
++    }
++
+     Vector3f boundaryMin = new Vector3f();
+     Vector3f boundaryMax = new Vector3f();
+       
+--- a/src/acousticfield3d/simulation/Trap.java
++++ b/src/acousticfield3d/simulation/Trap.java
+@@ -52,7 +52,7 @@
+         final float mSpeed = s.getMediumSpeed();
+         
+         if (focus){
+-            SimplePhaseAlgorithms.focus( transducers, target, mSpeed );
++            SimplePhaseAlgorithms.focus( transducers, target, s );
+         }
+         if(type == TrapType.Twin){
+             SimplePhaseAlgorithms.addTwinSignature(transducers, parameter1 * M.DEG_TO_RAD);

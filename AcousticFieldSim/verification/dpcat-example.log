@@ -1,0 +1,376 @@
+Picked up JAVA_TOOL_OPTIONS: -Duser.language=en -Duser.country=US -Dfile.encoding=UTF-8
+Frame 0 approach, separation=14.0 mm, targets=2
+Restart 1: -482.0466905532182 -> -2452.3234986263824, sweeps=5
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -482.046691 | Final cost: -2452.32350
+Sweeps: 5 | Changed transducers: 133 | Accepted changes: 167 | Converged: true
+Mean |p|: 1226.20951 | Std |p|: 0.00955226625 | CV: 6.16809353e-07 -> 7.79007679e-06
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 0 approach, separation=14.0 mm, targets=2
+Restart 1: 0.0 -> 0.0, sweeps=1
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 0.00000000 | Final cost: 0.00000000
+Sweeps: 1 | Changed transducers: 0 | Accepted changes: 0 | Converged: true
+Mean |p|: 1226.20951 | Std |p|: 0.00955226625 | CV: 7.79007679e-06 -> 7.79007679e-06
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 1 approach, separation=12.0 mm, targets=2
+Restart 1: 150.8025084839961 -> 1.392463484695482, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 150.802508 | Final cost: 1.39246348
+Sweeps: 3 | Changed transducers: 75 | Accepted changes: 78 | Converged: true
+Mean |p|: 1226.49631 | Std |p|: 0.327672382 | CV: 0.00175948376 -> 0.000267161327
+Phase code min/max: 0/31 | Mean circular change: 0.828125
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 2 approach, separation=10.0 mm, targets=2
+Restart 1: 298.2318378647813 -> 1.4220845731173157, sweeps=5
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 298.231838 | Final cost: 1.42208457
+Sweeps: 5 | Changed transducers: 143 | Accepted changes: 217 | Converged: true
+Mean |p|: 1225.50620 | Std |p|: 0.199913333 | CV: 0.0116826153 -> 0.000163127149
+Phase code min/max: 0/31 | Mean circular change: 2.354167
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 3 approach, separation=9.6 mm, targets=2
+Restart 1: 64.14212728893207 -> 0.8606888031437625, sweeps=4
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 64.1421273 | Final cost: 0.860688803
+Sweeps: 4 | Changed transducers: 78 | Accepted changes: 84 | Converged: true
+Mean |p|: 1226.03444 | Std |p|: 0.0663715138 | CV: 0.00123241275 -> 5.41351138e-05
+Phase code min/max: 0/31 | Mean circular change: 0.593750
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 4 approach, separation=9.4 mm, targets=2
+Restart 1: 31.473979057861897 -> 1.067746110048073, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 31.4739791 | Final cost: 1.06774611
+Sweeps: 3 | Changed transducers: 44 | Accepted changes: 49 | Converged: true
+Mean |p|: 1226.70276 | Std |p|: 0.293780246 | CV: 0.000477759346 -> 0.000239487720
+Phase code min/max: 0/31 | Mean circular change: 0.250000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 5 approach, separation=9.2 mm, targets=2
+Restart 1: 29.68800848918837 -> 0.9771180613975528, sweeps=2
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 29.6880085 | Final cost: 0.977118061
+Sweeps: 2 | Changed transducers: 43 | Accepted changes: 43 | Converged: true
+Mean |p|: 1225.82656 | Std |p|: 0.408034803 | CV: 0.000149982668 -> 0.000332865038
+Phase code min/max: 0/31 | Mean circular change: 0.260417
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 6 approach, separation=9.0 mm, targets=2
+Restart 1: 32.02414309094998 -> 0.8385652372245894, sweeps=4
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 32.0241431 | Final cost: 0.838565237
+Sweeps: 4 | Changed transducers: 33 | Accepted changes: 33 | Converged: true
+Mean |p|: 1226.15276 | Std |p|: 0.184819631 | CV: 0.000237655071 -> 0.000150731326
+Phase code min/max: 0/31 | Mean circular change: 0.187500
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 7 approach, separation=8.8 mm, targets=2
+Restart 1: 31.144126810446465 -> 0.77384950864507, sweeps=2
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C1_COMPLEX
+Initial cost: 31.1441268 | Final cost: 0.773849509
+Sweeps: 2 | Changed transducers: 39 | Accepted changes: 39 | Converged: true
+Mean |p|: 1226.59070 | Std |p|: 0.279545948 | CV: 8.70521945e-05 -> 0.000227904832
+Phase code min/max: 0/31 | Mean circular change: 0.208333
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 0 two-wide, separation=14.0 mm, targets=18
+Restart 1: -16620.333257463662 -> -29233.901259371945, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -16620.3333 | Final cost: -29233.9013
+Sweeps: 10 | Changed transducers: 184 | Accepted changes: 932 | Converged: false
+Mean |p|: 1770.50123 | Std |p|: 263.512088 | CV: 0.171685041 -> 0.148834739
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 1 two-wide, separation=12.0 mm, targets=18
+Restart 1: -27462.558438702916 -> -27702.05904046752, sweeps=4
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -27462.5584 | Final cost: -27702.0590
+Sweeps: 4 | Changed transducers: 88 | Accepted changes: 100 | Converged: true
+Mean |p|: 1731.57519 | Std |p|: 346.629434 | CV: 0.205924762 -> 0.200181567
+Phase code min/max: 0/31 | Mean circular change: 0.484375
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 2 two-wide, separation=10.0 mm, targets=18
+Restart 1: -23844.253359262686 -> -23901.660466892787, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -23844.2534 | Final cost: -23901.6605
+Sweeps: 3 | Changed transducers: 54 | Accepted changes: 57 | Converged: true
+Mean |p|: 1613.29696 | Std |p|: 513.768477 | CV: 0.322328781 -> 0.318458715
+Phase code min/max: 0/31 | Mean circular change: 0.302083
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 3 two-wide, separation=9.6 mm, targets=18
+Restart 1: -22912.785092510632 -> -22912.875776602657, sweeps=2
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -22912.7851 | Final cost: -22912.8758
+Sweeps: 2 | Changed transducers: 2 | Accepted changes: 2 | Converged: true
+Mean |p|: 1580.43130 | Std |p|: 553.488759 | CV: 0.350225435 -> 0.350213742
+Phase code min/max: 0/31 | Mean circular change: 0.010417
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 4 two-wide, separation=9.4 mm, targets=18
+Restart 1: -22392.9675200701 -> -22399.84492867678, sweeps=5
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -22392.9675 | Final cost: -22399.8449
+Sweeps: 5 | Changed transducers: 40 | Accepted changes: 44 | Converged: true
+Mean |p|: 1560.51087 | Std |p|: 568.935071 | CV: 0.367051853 -> 0.364582575
+Phase code min/max: 0/31 | Mean circular change: 0.208333
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 5 two-wide, separation=9.2 mm, targets=18
+Restart 1: -21866.861783983702 -> -21866.861783983702, sweeps=1
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -21866.8618 | Final cost: -21866.8618
+Sweeps: 1 | Changed transducers: 0 | Accepted changes: 0 | Converged: true
+Mean |p|: 1542.21336 | Std |p|: 589.297878 | CV: 0.382111770 -> 0.382111770
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 6 two-wide, separation=9.0 mm, targets=18
+Restart 1: -21317.850629469747 -> -21317.850629469747, sweeps=1
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -21317.8506 | Final cost: -21317.8506
+Sweeps: 1 | Changed transducers: 0 | Accepted changes: 0 | Converged: true
+Mean |p|: 1523.06481 | Std |p|: 609.731604 | CV: 0.400332013 -> 0.400332013
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 7 two-wide, separation=8.8 mm, targets=18
+Restart 1: -20753.37866187095 -> -20753.692672425583, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 18 | Objective: C2_PAPER
+Initial cost: -20753.3787 | Final cost: -20753.6927
+Sweeps: 3 | Changed transducers: 4 | Accepted changes: 6 | Converged: true
+Mean |p|: 1501.65186 | Std |p|: 627.604089 | CV: 0.419269664 -> 0.417942470
+Phase code min/max: 0/31 | Mean circular change: 0.020833
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 0 approach, separation=14.0 mm, targets=2
+Restart 1: -2452.3234986263824 -> -2452.3234986263824, sweeps=1
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2452.32350 | Final cost: -2452.32350
+Sweeps: 1 | Changed transducers: 0 | Accepted changes: 0 | Converged: true
+Mean |p|: 1226.20951 | Std |p|: 0.00955226625 | CV: 7.79007679e-06 -> 7.79007679e-06
+Phase code min/max: 0/31 | Mean circular change: 0.000000
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 1 approach, separation=12.0 mm, targets=2
+Restart 1: -2295.6923013405517 -> -2461.5002938987436, sweeps=5
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2295.69230 | Final cost: -2461.50029
+Sweeps: 5 | Changed transducers: 51 | Accepted changes: 71 | Converged: true
+Mean |p|: 1230.78249 | Std |p|: 0.00646920799 | CV: 0.00175948376 -> 5.25617485e-06
+Phase code min/max: 0/31 | Mean circular change: 1.109375
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 2 approach, separation=10.0 mm, targets=2
+Restart 1: -2189.384308981037 -> -2822.701835591131, sweeps=4
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2189.38431 | Final cost: -2822.70184
+Sweeps: 4 | Changed transducers: 61 | Accepted changes: 80 | Converged: true
+Mean |p|: 1411.39079 | Std |p|: 0.00797469300 | CV: 0.0151076936 -> 5.65023737e-06
+Phase code min/max: 0/31 | Mean circular change: 1.161458
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 3 approach, separation=9.6 mm, targets=2
+Restart 1: -2741.452539453436 -> -2870.1303371939844, sweeps=5
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2741.45254 | Final cost: -2870.13034
+Sweeps: 5 | Changed transducers: 25 | Accepted changes: 38 | Converged: true
+Mean |p|: 1435.09753 | Std |p|: 0.00647232173 | CV: 0.00625706546 -> 4.51002221e-06
+Phase code min/max: 0/31 | Mean circular change: 0.265625
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 4 approach, separation=9.4 mm, targets=2
+Restart 1: -2829.0440278708757 -> -2906.571097463274, sweeps=4
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2829.04403 | Final cost: -2906.57110
+Sweeps: 4 | Changed transducers: 27 | Accepted changes: 30 | Converged: true
+Mean |p|: 1453.34973 | Std |p|: 0.0128354464 | CV: 0.00292343066 -> 8.83162956e-06
+Phase code min/max: 0/31 | Mean circular change: 0.260417
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 5 approach, separation=9.2 mm, targets=2
+Restart 1: -2865.4951727875923 -> -2908.1156353512692, sweeps=2
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2865.49517 | Final cost: -2908.11564
+Sweeps: 2 | Changed transducers: 8 | Accepted changes: 8 | Converged: true
+Mean |p|: 1454.12275 | Std |p|: 0.0129868539 | CV: 0.00283991357 -> 8.93105751e-06
+Phase code min/max: 0/31 | Mean circular change: 0.067708
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 6 approach, separation=9.0 mm, targets=2
+Restart 1: -2866.8334860638925 -> -2902.244254302227, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2866.83349 | Final cost: -2902.24425
+Sweeps: 3 | Changed transducers: 9 | Accepted changes: 9 | Converged: true
+Mean |p|: 1451.16924 | Std |p|: 0.00942213203 | CV: 0.00279620819 -> 6.49278650e-06
+Phase code min/max: 0/31 | Mean circular change: 0.114583
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 7 approach, separation=8.8 mm, targets=2
+Restart 1: -2858.763896701802 -> -2902.701857253099, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 2 | Objective: C2_PAPER
+Initial cost: -2858.76390 | Final cost: -2902.70186
+Sweeps: 3 | Changed transducers: 8 | Accepted changes: 10 | Converged: true
+Mean |p|: 1451.38016 | Std |p|: 0.00584649004 | CV: 0.00282017432 -> 4.02822789e-06
+Phase code min/max: 0/31 | Mean circular change: 0.109375
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 8 widen, separation=8.8 mm, targets=8
+Restart 1: -11092.79147918261 -> -13640.165738982036, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 8 | Objective: C2_PAPER
+Initial cost: -11092.7915 | Final cost: -13640.1657
+Sweeps: 10 | Changed transducers: 175 | Accepted changes: 520 | Converged: false
+Mean |p|: 1734.05252 | Std |p|: 23.2254407 | CV: 0.0252014601 -> 0.0133937354
+Phase code min/max: 0/31 | Mean circular change: 3.317708
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 9 widen, separation=8.8 mm, targets=12
+Restart 1: -19297.28008457001 -> -19501.880131536556, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 12 | Objective: C2_PAPER
+Initial cost: -19297.2801 | Final cost: -19501.8801
+Sweeps: 10 | Changed transducers: 150 | Accepted changes: 361 | Converged: false
+Mean |p|: 1686.16577 | Std |p|: 73.2109056 | CV: 0.0456475556 -> 0.0434185696
+Phase code min/max: 0/31 | Mean circular change: 1.369792
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 10 widen, separation=8.8 mm, targets=16
+Restart 1: -24311.319942230486 -> -24451.032713769768, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 16 | Objective: C2_PAPER
+Initial cost: -24311.3199 | Final cost: -24451.0327
+Sweeps: 10 | Changed transducers: 84 | Accepted changes: 205 | Converged: false
+Mean |p|: 1605.21406 | Std |p|: 123.239224 | CV: 0.0877387186 -> 0.0767743239
+Phase code min/max: 0/31 | Mean circular change: 0.708333
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 11 widen, separation=8.8 mm, targets=19
+Restart 1: -27247.723668595427 -> -27599.90249408854, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 19 | Objective: C2_PAPER
+Initial cost: -27247.7237 | Final cost: -27599.9025
+Sweeps: 10 | Changed transducers: 91 | Accepted changes: 238 | Converged: false
+Mean |p|: 1529.29855 | Std |p|: 145.676990 | CV: 0.126278589 -> 0.0952573912
+Phase code min/max: 0/31 | Mean circular change: 0.911458
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 12 central-wide, separation=0.0 mm, targets=19
+Restart 1: -27599.90249408854 -> -27599.903310898902, sweeps=2
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 19 | Objective: C2_PAPER
+Initial cost: -27599.9025 | Final cost: -27599.9033
+Sweeps: 2 | Changed transducers: 1 | Accepted changes: 1 | Converged: true
+Mean |p|: 1529.36870 | Std |p|: 145.810204 | CV: 0.0952573912 -> 0.0953401257
+Phase code min/max: 0/31 | Mean circular change: 0.005208
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 13 contract, separation=0.0 mm, targets=15
+Restart 1: -22435.772665254888 -> -24230.29772875819, sweeps=10
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 15 | Objective: C2_PAPER
+Initial cost: -22435.7727 | Final cost: -24230.2977
+Sweeps: 10 | Changed transducers: 102 | Accepted changes: 348 | Converged: false
+Mean |p|: 1684.62076 | Std |p|: 103.901367 | CV: 0.0772888219 -> 0.0616764138
+Phase code min/max: 0/31 | Mean circular change: 1.473958
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 14 contract, separation=0.0 mm, targets=10
+Restart 1: -16974.80383341161 -> -19119.45092021906, sweeps=9
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 10 | Objective: C2_PAPER
+Initial cost: -16974.8038 | Final cost: -19119.4509
+Sweeps: 9 | Changed transducers: 160 | Accepted changes: 257 | Converged: true
+Mean |p|: 2244.57891 | Std |p|: 332.633816 | CV: 0.0235897547 -> 0.148194307
+Phase code min/max: 0/31 | Mean circular change: 3.255208
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 15 contract, separation=0.0 mm, targets=6
+Restart 1: -14098.580077479777 -> -14265.19084100249, sweeps=7
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 6 | Objective: C2_PAPER
+Initial cost: -14098.5801 | Final cost: -14265.1908
+Sweeps: 7 | Changed transducers: 98 | Accepted changes: 147 | Converged: true
+Mean |p|: 2564.79645 | Std |p|: 112.358788 | CV: 0.0397020843 -> 0.0438080721
+Phase code min/max: 0/31 | Mean circular change: 0.572917
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Frame 16 contract, separation=0.0 mm, targets=1
+Restart 1: -2697.2897340416007 -> -2704.5895124095937, sweeps=3
+Active transducers: 192 | Phase levels: 32
+Reflector enabled: true | Y: -75.0000 mm | magnitude: 1.00000 | phase: 0.000 deg
+Target count: 1 | Objective: C2_PAPER
+Initial cost: -2697.28973 | Final cost: -2704.58951
+Sweeps: 3 | Changed transducers: 42 | Accepted changes: 48 | Converged: true
+Mean |p|: 2704.58951 | Std |p|: 0.00000000 | CV: 0.00000000 -> 0.00000000
+Phase code min/max: 0/31 | Mean circular change: 0.218750
+Requested dwell: 50.000 ms | Targets are pressure constraints; stable levitation NOT validated.
+
+Example saved: C:\Users\admin\Documents\ChatGPT\acoustic\DPCAT_delivery\AcousticFieldSim\examples\dpcat

@@ -1,0 +1,17 @@
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+/workspace/scratch/6e018e0c9154/work/AcousticFieldSim/test/acousticfield3d/algorithms/ReflectorIntegrationTest.java:29: warning: Unsafe is internal proprietary API and may be removed in a future release
+        Field u=sun.misc.Unsafe.class.getDeclaredField("theUnsafe");u.setAccessible(true);
+                        ^
+/workspace/scratch/6e018e0c9154/work/AcousticFieldSim/test/acousticfield3d/algorithms/ReflectorIntegrationTest.java:30: warning: Unsafe is internal proprietary API and may be removed in a future release
+        MainForm mf=(MainForm)((sun.misc.Unsafe)u.get(null)).allocateInstance(MainForm.class);
+                                        ^
+2 warnings
+PASS: direct/reflected fields, tilted normals, rigid/release boundaries, height and complex R
+PASS: first/second/third spatial derivatives and step convergence
+PASS: 192/256 focus, 64 OFF channels, correction/pin preservation, XML.GZ save/load
+PASS: pressure, Gorkov, force and Laplacian phase gradients vs finite differences
+ALL PASS: 1444 assertions
+PASS: production cache/CPU pressure and Gorkov agreement; BFGS |p| 146.10870361328125 -> 857.1382446289062
+PASS: Swing height/gap controls, slice creation, pressure focus and calibration preservation
+Built: /workspace/scratch/6e018e0c9154/work/AcousticFieldSim/dist/AcousticField3D.jar
