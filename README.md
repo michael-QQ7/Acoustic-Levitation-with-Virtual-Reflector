@@ -140,7 +140,6 @@ At 250000 bps using standard **8N1** serial framing, even the *shortest possible
 
 **Safe shutdown:** Disconnect and Stop do not guarantee that the last FPGA pattern switches off. Set all transducer amplitudes to `0`, click **Send**, wait for `phases ok`, then disconnect. Use an independent hardware power cutoff for emergencies.
 
-Further details: [MegaFPGA communication](AcousticFieldSim/README_MegaFPGA.md).
 
 ## 4. Optimize a field or generate a sequence
 
