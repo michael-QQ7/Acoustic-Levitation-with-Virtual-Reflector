@@ -1,6 +1,7 @@
 # Acoustic Levitation with a Single Phased Array and Reflector
 
 This is my modified version of [SonicSurface](https://github.com/upnalab/SonicSurface) and [Ultraino / AcousticField3D](https://github.com/asiermarzo/Ultraino). I used it to levitate, move, and merge ethanol droplets with a 40 kHz ultrasonic phased array and a passive reflector. I added a reflector model to AcousticField3D, a DPCAT interface for generating coalescence sequences.
+
 You can watch the process in this video: https://youtube.com/shorts/17up5Glu6to?si=qhz9mWbb4V7As6MR
 ## 1. Purpose and Background
 
