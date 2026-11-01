@@ -31,7 +31,7 @@ Shift registers and driver ICs
 40 kHz ultrasonic phased array
 ```
 
-The original controller has 256 logical channel addresses. For convenience, my array has only 192 transducers installed (addresses `64–255`). Addresses `0–63` are left OFF. The phase codes run from `0` to `31` for 32 phase steps; `32` is the OFF code.
+The original controller has 256 logical channel addresses. For convenience, my array has only 192 transducers installed (addresses `64–255`). The phase codes run from `0` to `31` for 32 phase steps; `32` is the OFF code.
 
 ### UART settings
 
@@ -81,7 +81,7 @@ The logic and driver power supplies are separate. Check the common ground, the F
 
 Getting the array calibrated made a big difference to the stability of the acoustic trap. Each transducer has its own phase offset, so using the same nominal phase command across channels is not enough.
 
-I saved my calibrated array model as an AcousticField3D `.xml.gz` file. This stores the transducer layout, order numbers, and phase corrections, which makes it easier to continue from the same setup the next day.
+Instead of storing phases to fpga as Marzo did, I saved my calibrated phases in an `.xml.gz` file. This stores the transducer layout, order numbers, and phase corrections.
 
 There are two fields that shouldn't be mixed up:
 
@@ -96,7 +96,7 @@ For a saved model, I usually check the following before trying to levitate anyth
 2. Check the transducer positions and `Order numbers`. For this board, only channels `64–255` are populated.
 3. In `Trans`, make sure installed transducers have nonzero amplitude. Some older files open with amplitude set to zero.
 4. Open `Reflector`, enable reflection, and enter `Gap from array (mm)`.
-5. Since my array is above the reflector, choose `Place below (-Y)`. With the array at `Y = 0` and a 75 mm gap, the modeled reflector is at `Y = -75 mm`.
+5. Since my array is above the reflector, choose `Place upward (+Y)`. With the array at `Y = 0` and a 75 mm gap, the modeled reflector is at `Y = +75 mm`. The minimum value of compensation is 0.1 mm not 0.
 6. Check `Pressure |R|` and `Reflection phase (deg)`, refresh the reflector status in DPCAT, and optimize again if the plate height or target position has changed.
 
 The position and reflection parameters change the simulated acoustic field, but moving the reflector in the GUI does not recalculate the phases by itself. Run the optimizer again after making a change. The displayed plate dimensions are visual only; they don't limit the acoustic reflection surface in this model.
@@ -125,19 +125,13 @@ python build_reflector.py --test
 My usual workflow in DPCAT is:
 
 1. Set the center position (`X`, `Y`, `Z`, in mm) or use a selected point in the simulator.
-2. Select a mode, merging axis, and objective function. For a basic two-droplet approach, start with `A: Two Point Traps` and `Merge axis: X`.
+2. Select a mode, merging axis, and objective function. For a basic two-droplet approach, start with `C: Point -> Wide -> Single` and `Merge axis: Z`.
 3. Set the initial and final separation. Click `Build linear separation list`, or edit the list yourself.
 4. Use `Optimize Current` to inspect a single frame, then `Generate Sequence` for the full set.
 5. Check the frames with `Preview Field` or `Preview Discrete Sequence`.
 6. Click `Add Sequence To Animation`, then save the model. You can send individual frames or play the whole sequence after connecting `MegaFPGA`.
 
 For the two-point example, an initial separation of 14 mm puts the pressure targets at `X = xc - 7 mm` and `X = xc + 7 mm`. `C1` matches a complex-pressure reference; `C2` favors pressure magnitude with a uniformity penalty; and `C2N` uses a relative uniformity term. Those are pressure-field targets, not guaranteed droplet equilibrium points.
-
-One of my example sequences uses these separations:
-
-```text
-14, 12, 10, 9.6, 9.4, 9.2, 9.0, 8.8  # mm
-```
 
 `Generate Sequence` reads the separation list itself. If you change the initial/final separation boxes without rebuilding the list, it will still use the old values.
 
@@ -168,35 +162,17 @@ For a playback run, `Export Playback Timing CSV` is useful for checking the timi
 
 There are more details in the [DPCAT user guide](AcousticFieldSim/DPCAT_README.md).
 
-## 5. Trying 500 Hz Frame Switching Next
+## 5. 500 Hz Frame Switching Solution
 
-The next idea is to switch quickly between two focal patterns rather than generate both traps at once. Watanabe et al. (2018) used 500 Hz time-multiplexed focusing for droplet manipulation. At that rate, the phase pattern needs to change every 2 ms.
+Watanabe et al. (2018) used 500 Hz time-multiplexed focusing to switch quickly between two focal patterns rather than generate both traps at once.
 
-My present PC → Mega → FPGA path is too slow for that. I previously recorded an estimate of 8–10 ms per frame, but I didn't establish exactly where that measurement started and ended, so I wouldn't treat it as the full end-to-end frame time.
+The current serial format makes the limitation clear. At 250000 baud with 8N1 framing, the shortest complete ASCII `phases=` command is 519 bytes, or at least 20.8 ms from PC to Mega. Sending the 259-byte binary frame from Mega to FPGA adds about 10.4 ms. This is before the processing overhead, so setting a 2 ms dwell in the GUI won't give 500 Hz output switching.
 
-The current serial format also makes the limitation clear. At 250000 baud with 8N1 framing, the shortest complete ASCII `phases=` command is 519 bytes, or at least 20.8 ms from PC to Mega. Sending the 259-byte binary frame from Mega to FPGA adds about 10.4 ms. This is before the processing overhead, so setting a 2 ms dwell in the GUI won't give 500 Hz output switching.
+My proposed solution is to calculate the phase frames in advance, store them on the FPGA, and use an internal timer to switch between patterns at 500 Hz. The main drawback is that changing the stored sequence may require modifying and reprogramming the FPGA firmware, which takes extra time.
 
-My plan is to calculate the frames beforehand and store a short sequence on the FPGA, then have a timer switch between patterns locally. If the frames can be uploaded into FPGA RAM, changing the sequence wouldn't require rebuilding the FPGA image every time. It would still need changes to the FPGA firmware and probably to the Arduino communication protocol.
+Another thing to consider is the initial levitation stage. The first phase pattern should be held long enough for the droplets to become stably levitated before starting the rapid switching sequence. Once both droplets are stable, the FPGA can begin switching between the precomputed patterns for manipulation and coalescence.
 
-I haven't implemented that part yet. The next test would be to measure the actual pattern-switching interval at the FPGA output, then see whether the droplets remain stable under time-multiplexed control.
-
-## 6. Files, Notes, and Limitations
-
-The example files are in `AcousticFieldSim/examples/dpcat/`:
-
-| File | Contents |
-| --- | --- |
-| `example_192_DPCAT_75mm.xml.gz` | 192 active addresses (`64–255`), 75 mm reflector gap, saved animations. |
-| `example_A_C1_sequence.csv` | 8 approach frames, 14 to 8.8 mm. |
-| `example_TWO_WIDE_C2_sequence.csv` | 8 frames using two wide regions. |
-| `example_POINT_WIDE_SINGLE_C2_sequence.csv` | 17 frames from two points to a central region. |
-
-These are offline-generated examples, not measured droplet trajectories. Recheck the transducer layout and calibration against the actual board before using them.
-
-A few limitations are worth keeping in mind. The reflector calculation doesn't include finite-plate diffraction, multiple reflections, acoustic streaming, or droplet deformation. DPCAT optimizes a pressure-field objective rather than a full three-dimensional force balance. The current `MegaFPGA` protocol supports phase and ON/OFF commands, but not continuously adjustable amplitude for individual channels.
-
-Also, don't assume that pressing Stop disables the FPGA outputs. Set all transducer amplitudes to `0` in the model, send that pattern, wait for `phases ok`, and verify that the array is off before disconnecting. Keep a separate hardware power cutoff available. Check the separate license terms for bundled libraries such as JOGL, GlueGen, and jSerialComm before redistributing them.
-
+## 6.Notes and Limitations
 ### Protocol notes
 
 The protocols also differ in how simulated transducers map to physical channels. The original `MEGA` protocol uses a driver-board/pin mapping; `MegaFPGA` maps the transducer `Order number` (minus any device offset) to its FPGA channel address. Check those order numbers if a focus appears in the wrong place.
